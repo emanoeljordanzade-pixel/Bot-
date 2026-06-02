@@ -1,428 +1,386 @@
+import os
+import sqlite3
 from flask import Flask
-from threading import Thread
 import telebot
-from telebot import types
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from threading import Thread
 
-# =================== تنظیمات ===================
-BOT_TOKEN      = "8773215261:AAF67pQ9AHZrzvMOZlNbsnaG2-uoTo3HHyk"
-ADMIN_ID       = 7374971382
-ADMIN_USERNAME = "AIireza_1383"
-GROUP_ID       = -1003649866579
-CARD_NUMBER    = "5892101542283284"
-CARD_OWNER     = "علیرضا وحدانی اصل"
-# ================================================
+# ----------------- تنظیمات اختصاصی علیرضا -----------------
+BOT_TOKEN = "8623315494:AAEQLWDt-IUC39TIUJIVnRRZGgVvo83Pepw" 
+ADMIN_ID = 7374971382        # آیدی عددی شما جهت پیام‌های مستقیم ضروری
+ADMIN_GROUP_ID = -1004294169429  # 🔴 حتماً آیدی عددی گروه ادمین خودت رو اینجا بذار (با منفی شروع میشه)
+
+CARD_NUMBER = "5892101542283284"
+ACCOUNT_NAME = "علیرضا واحدانی"
+# -----------------------------------------------------------
 
 bot = telebot.TeleBot(BOT_TOKEN)
-app = Flask(__name__)
+telebot.apihelper.API_URL = "https://api.telegram.org/bot{0}/{1}"
+app = Flask('')
 
-user_states       = {}
-group_msg_to_user = {}
+# --- دیتابیس واسط برای ذخیره اطلاعات سیستم رفرال و مالی ---
+def init_db():
+    conn = sqlite3.connect('store.db')
+    cursor = conn.cursor()
+    cursor.execute('''CREATE TABLE IF NOT EXISTS users 
+                      (user_id INTEGER PRIMARY KEY, username TEXT, name TEXT, balance INTEGER DEFAULT 0, referred_by INTEGER, gift_claimed INTEGER DEFAULT 0)''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS orders 
+                      (order_id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, plan_name TEXT, config_data TEXT DEFAULT '')''')
+    cursor.execute('''CREATE TABLE IF NOT EXISTS pending_deposits 
+                      (msg_id INTEGER PRIMARY KEY, user_id INTEGER, amount INTEGER)''')
+    conn.commit()
+    conn.close()
 
+init_db()
+
+# متون تعرفه با اعمال تخفیف رفرال (۵ درصد برای دعوت شده)
 PLANS = {
-    "plan_10gb": {"name": "۱۰ گیگابایت", "price": "۱۷۵,۰۰۰ تومان"},
-    "plan_20gb": {"name": "۲۰ گیگابایت", "price": "۳۲۵,۰۰۰ تومان"},
-    "plan_30gb": {"name": "۳۰ گیگابایت", "price": "۴۳۰,۰۰۰ تومان"},
-    "plan_40gb": {"name": "۴۰ گیگابایت", "price": "۵۶۰,۰۰۰ تومان"},
+    "10gb": {"name": "🩵 ۱۰ گیگابایت نامحدود", "price": 175000, "discount_price": 166250},
+    "20gb": {"name": "💙 ۲۰ گیگابایت نامحدود", "price": 325000, "discount_price": 308750},
+    "30gb": {"name": "🩷 ۳۰ گیگابایت نامحدود", "price": 430000, "discount_price": 408500},
+    "40gb": {"name": "❤️‍🔥 ۴۰ گیگابایت نامحدود", "price": 560000, "discount_price": 532000}
 }
 
-# =================== متون آموزش ===================
-
-TEXT_V2RAY = (
-    "📱 <b>آموزش اتصال با V2RayNG</b>\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "ابتدا لینکی که برایتان فرستادیم را <b>کپی (Copy)</b> کنید.\n"
-    "(دستتان را روی لینک نگه دارید و گزینه کپی را بزنید)\n\n"
-    "سپس برنامه <b>V2RayNG</b> را باز کنید و مراحل زیر را قدم به قدم انجام دهید:\n\n"
-    "1️⃣ روی علامت <b>+</b> (به‌علاوه) در بالای صفحه بزنید.\n\n"
-    "2️⃣ گزینه <b>Import config from Clipboard</b>\n"
-    "   (وارد کردن کانفیگ از کلیپ‌بورد) را انتخاب کنید.\n\n"
-    "3️⃣ روی <b>سه نقطه</b> بالا سمت راست صفحه بزنید.\n\n"
-    "4️⃣ گزینه <b>Real delay all configuration</b>\n"
-    "   (تاخیر کانفیگ‌های گروه فعلی) را انتخاب کنید.\n"
-    "   ⏳ کمی صبر کنید تا جلوی سرورها عددهای <b>سبزرنگ</b> ظاهر شود.\n\n"
-    "5️⃣ دوباره روی همان <b>سه نقطه</b> بالا سمت راست بزنید.\n\n"
-    "6️⃣ گزینه <b>Sorting by test results</b>\n"
-    "   (انتخاب بر اساس نتایج آزمایش) را بزنید.\n"
-    "   ✅ با این کار، قوی‌ترین سرورِ آن لحظه به ردیف اول می‌آید.\n\n"
-    "7️⃣ روی <b>دایره بزرگ</b> پایین صفحه بزنید تا متصل شوید. 🟢\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n"
-    "💡 <b>راهنمای حل مشکل کندی سرعت:</b>\n\n"
-    "هر وقت سرعت افت کرد، نیازی به دریافت کانفیگ جدید نیست.\n"
-    "فقط برنامه را باز کنید و مراحل <b>۳ تا ۶</b> را تکرار کنید.\n"
-    "برنامه خودکار بهترین سرور جایگزین را فعال می‌کند.\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n"
-    "📊 همچنین می‌توانید از طریق <b>ساب‌لینک</b> ارسال‌شده،\n"
-    "مقدار مصرف و حجم باقی‌مانده را مشاهده کنید."
+WELCOME_TEXT = (
+    "🚀 <b>سلام رفیق! به دنیای اینترنت بدون مرز خوش اومدی!</b> 😎\n\n"
+    "دنبال یه اتصال پرسرعت، بدون قطعی و کاملاً پایدار می‌گردی؟ جای درستی اومدی! "
+    "اینجا همه‌ی کانفیگ‌ها زمان و کاربرشون <b>نامحدوده</b> و رو همه‌ی اپ‌ها مِثِ فرفره کار می‌کنه! 🔥\n\n"
+    "📣 <b>یه خبر توپ و پر از تخفیف:</b>\n"
+    "با دعوت کردن دوستات به ربات، هم به اونا حال بده هم به خودت! 😉\n"
+    "👥 دوستت تو اولین خریدش <b>٪۵ تخفیف</b> می‌گیره و <b>٪۷ از مبلغ خریدش</b> مستقیم میشینه تو کیف پول تو!\n"
+    "🎁 جذاب‌تر از همه: <u>اگه ۱۰ نفر رو دعوت کنی که خرید کنن، یه کانفیگ ۵ گیگابایتی کاملاً رایگان از طرف علیرضا جایزه می‌گیری!</u>"
 )
-
-TEXT_V2BOX = (
-    "📱 <b>آموزش اتصال با V2Box (از طریق ساب‌لینک)</b>\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "برنامه <b>V2Box</b> را باز کنید و مراحل زیر را دنبال کنید:\n\n"
-    "1️⃣ در صفحه اصلی، روی آیکون <b>پروفایل</b> (گوشه پایین) بزنید.\n\n"
-    "2️⃣ گزینه <b>Subscriptions</b> (اشتراک‌ها) را انتخاب کنید.\n\n"
-    "3️⃣ روی دکمه <b>+</b> (افزودن) بزنید.\n\n"
-    "4️⃣ یک نام دلخواه در کادر <b>Name</b> وارد کنید.\n"
-    "   (مثال: My VPN)\n\n"
-    "5️⃣ <b>ساب‌لینک</b> ارسال‌شده را در کادر <b>URL</b> وارد کنید.\n\n"
-    "6️⃣ روی <b>Save</b> (ذخیره) بزنید.\n\n"
-    "7️⃣ ⏳ چند ثانیه صبر کنید تا کانفیگ‌ها بارگذاری شوند.\n\n"
-    "8️⃣ به صفحه اصلی برگردید.\n"
-    "   لیست سرورها را مشاهده می‌کنید.\n\n"
-    "9️⃣ روی <b>بهترین سرور</b> (کمترین پینگ) ضربدر بزنید تا انتخاب شود.\n\n"
-    "🔟 روی دکمه <b>اتصال</b> در پایین صفحه بزنید. 🟢\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n"
-    "💡 <b>نکته:</b> برای به‌روزرسانی سرورها، وارد بخش\n"
-    "Subscriptions شوید و گزینه <b>Update</b> را بزنید.\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n"
-    "📊 همچنین می‌توانید از طریق <b>ساب‌لینک</b> ارسال‌شده،\n"
-    "مقدار مصرف و حجم باقی‌مانده را مشاهده کنید."
-)
-
-TEXT_NPV = (
-    "📱 <b>آموزش اتصال با NPV Tunnel</b>\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "برنامه <b>NPV Tunnel</b> را باز کنید و مراحل زیر را دنبال کنید:\n\n"
-    "1️⃣ در پایین صفحه روی گزینه <b>Subs</b> بزنید.\n\n"
-    "2️⃣ روی دکمه <b>+</b> بزنید.\n\n"
-    "3️⃣ کادر اول (نام) را <i>اختیاری</i> پر کنید.\n"
-    "   (می‌توانید هر نامی مثل My VPN بنویسید)\n\n"
-    "4️⃣ در کادر دوم، <b>ساب‌لینک</b> ارسال‌شده را وارد کنید.\n\n"
-    "5️⃣ ⏳ چند ثانیه صبر کنید، سپس روی\n"
-    "   آیکون <b>ابر ☁️</b> در پایین کادر کلیک کنید تا سرورها بارگذاری شوند.\n\n"
-    "6️⃣ روی گزینه <b>Ping</b> بزنید و صبر کنید.\n\n"
-    "7️⃣ از لیست، روی سروری که <b>پینگ کمتری</b> دارد کلیک کنید تا انتخاب شود.\n\n"
-    "8️⃣ در پایین صفحه روی آیکون <b>خانه 🏠</b> بزنید.\n\n"
-    "9️⃣ روی دکمه <b>اتصال</b> بزنید. 🟢\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n"
-    "💡 <b>نکته:</b> هر بار که کانکشن ضعیف شد،\n"
-    "مراحل Ping و انتخاب سرور را تکرار کنید.\n\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n"
-    "📊 همچنین می‌توانید از طریق <b>ساب‌لینک</b> ارسال‌شده،\n"
-    "مقدار مصرف و حجم باقی‌مانده را مشاهده کنید."
-)
-
-# =================== کیبوردها ===================
-
-def kb_tutorial_menu():
-    """منوی اصلی آموزش"""
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("📶 آموزش V2RayNG",      callback_data="tut_v2ray"),
-        types.InlineKeyboardButton("⚫ آموزش V2Box",         callback_data="tut_v2box"),
-        types.InlineKeyboardButton("🔐 آموزش NPV Tunnel",   callback_data="tut_npv"),
-        types.InlineKeyboardButton("📥 دانلود برنامه موردنظر", callback_data="tut_download"),
-        types.InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="tut_back_main"),
-    )
-    return markup
-
-def kb_back_to_tutorial():
-    """دکمه بازگشت به منوی آموزش"""
-    markup = types.InlineKeyboardMarkup()
-    markup.add(
-        types.InlineKeyboardButton("🔙 بازگشت به آموزش‌ها", callback_data="tut_back"),
-    )
-    return markup
-
-def kb_download_menu():
-    """منوی دانلود برنامه‌ها"""
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton(
-            "📶 دانلود V2RayNG",
-            url="https://play.google.com/store/apps/details?id=com.v2ray.ang"
-        ),
-        types.InlineKeyboardButton(
-            "⚫ دانلود V2Box",
-            url="https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box"
-        ),
-        types.InlineKeyboardButton(
-            "🔐 دانلود NPV Tunnel",
-            url="https://play.google.com/store/apps/details?id=com.napsternetlabs.napsternetv"
-        ),
-        types.InlineKeyboardButton("🔙 بازگشت به آموزش‌ها", callback_data="tut_back"),
-    )
-    return markup
 
 @app.route('/')
-def home():
-    return "Bot is running!", 200
+def home(): return "Bot is Active"
 
-def run_web():
-    app.run(host='0.0.0.0', port=7860)
-
-def main_menu():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add(
-        types.KeyboardButton("🛒 خرید کانفیگ"),
-        types.KeyboardButton("👨‍💻 پشتیبانی"),
-        types.KeyboardButton("📚 آموزش وصل شدن به کانفیگ"),
-    )
+# منوی اصلی ثابت (تغییر نمی‌کند تا کاربر همیشه دسترسی داشته باشد)
+def main_keyboard():
+    markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add(KeyboardButton("🛒 فروشگاه و لیست قیمت"), KeyboardButton("👤 حساب کاربری"))
+    markup.add(KeyboardButton("💼 کیف پول من"), KeyboardButton("🔗 دریافت لینک دعوت"))
+    markup.add(KeyboardButton("👨‍💻 پشتیبانی آنلاین"))
     return markup
 
-# ─── /start ───
 @bot.message_handler(commands=['start'])
-def cmd_start(message):
-    if message.chat.type != 'private':
-        return
-    user_states.pop(message.from_user.id, None)
-    bot.send_message(
-        message.chat.id,
-        f"👋 سلام <b>{message.from_user.first_name}</b> عزیز!\n\n"
-        "🎉 به ربات فروش کانفیگ VPN خوش آمدید.\n\n"
-        "از منوی زیر یکی را انتخاب کنید 👇",
-        parse_mode="HTML",
-        reply_markup=main_menu()
+def start_cmd(message):
+    user_id = message.chat.id
+    username = message.from_user.username or "ندارد"
+    name = message.from_user.first_name
+    
+    # بررسی کد رفرال
+    args = message.text.split()
+    referrer = None
+    if len(args) > 1 and args[1].isdigit():
+        referrer = int(args[1])
+        if referrer == user_id: referrer = None
+
+    conn = sqlite3.connect('store.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+    exists = cursor.fetchone()
+    
+    if not exists:
+        cursor.execute("INSERT INTO users (user_id, username, name, referred_by) VALUES (?, ?, ?, ?)", 
+                       (user_id, username, name, referrer))
+        conn.commit()
+    conn.close()
+    
+    bot.send_message(user_id, WELCOME_TEXT, parse_mode="HTML", reply_markup=main_keyboard())
+
+@bot.message_handler(func=lambda m: True)
+def handle_menu_clicks(message):
+    user_id = message.chat.id
+    
+    if message.text == "🛒 فروشگاه و لیست قیمت":
+        send_store_menu(user_id)
+    elif message.text == "👤 حساب کاربری":
+        send_profile_menu(user_id)
+    elif message.text == "💼 کیف پول من":
+        send_wallet_menu(user_id)
+    elif message.text == "🔗 دریافت لینک دعوت":
+        bot.send_message(user_id, f"🎉 <b>لینک دعوت اختصاصی شما:</b>\nhttps://t.me/{bot.get_me().username}?start={user_id}\n\nاین لینک رو بفرست برای دوستات؛ اونا ۵٪ تخفیف می‌گیرن و تو هم ۷٪ سودِ مادی و شانس برنده شدن ۵ گیگابایت هدیه! 🚀", parse_mode="HTML")
+    elif message.text == "👨‍💻 پشتیبانی آنلاین":
+        bot.send_message(user_id, "💬 رفیق برای حل هرگونه مشکل، خرید عمده یا مشاوره مستقیم می‌تونی با آیدی زیر در ارتباط باشی:\n\n🆔 @AIireza_1383")
+
+# --- منوی فروشگاه (Inline برای جلوگیری از شلوغی چت) ---
+def send_store_menu(user_id, message_id=None):
+    conn = sqlite3.connect('store.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT referred_by FROM users WHERE user_id = ?", (user_id,))
+    ref = cursor.fetchone()[0]
+    conn.close()
+    
+    has_discount = ref is not None
+    text = "🛍️ <b>لیست پلن‌های VIP (زمان و کاربر نامحدود):</b>\n\n"
+    if has_discount:
+        text += "🌟 تبریک! چون با لینک دعوت اومدی، <b>۵٪ تخفیف اختصاصی</b> روی همه‌ی پلن‌ها برات اعمال شد:\n\n"
+    
+    markup = InlineKeyboardMarkup()
+    for key, info in PLANS.items():
+        final_price = info["discount_price"] if has_discount else info["price"]
+        text += f"▪️ {info['name']} 👈 <b>{final_price:,}</b> تومان\n"
+        markup.add(InlineKeyboardButton(f"خرید {info['name']}", callback_data=f"buy_{key}"))
+        
+    text += "\n📶 تست شده روی تمام اپراتورها با بالاترین پروتکل‌های امنیتی."
+    
+    if message_id:
+        bot.edit_message_text(text, user_id, message_id, parse_mode="HTML", reply_markup=markup)
+    else:
+        bot.send_message(user_id, text, parse_mode="HTML", reply_markup=markup)
+
+# --- منوی کیف پول ---
+def send_wallet_menu(user_id, message_id=None):
+    conn = sqlite3.connect('store.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
+    balance = cursor.fetchone()[0]
+    conn.close()
+    
+    text = f"💼 <b>وضعیت کیف پول شما:</b>\n\n💵 موجودی فعلی: <b>{balance:,}</b> تومان\n\nمی‌تونی کیف پولت رو شارژ کنی و خیلی راحت و خودکار خریدت رو انجام بدی!"
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("💳 شارژ حساب", callback_data="wallet_charge"))
+    if message_id:
+        bot.edit_message_text(text, user_id, message_id, parse_mode="HTML", reply_markup=markup)
+    else:
+        bot.send_message(user_id, text, parse_mode="HTML", reply_markup=markup)
+
+# --- منوی حساب کاربری ---
+def send_profile_menu(user_id, message_id=None):
+    conn = sqlite3.connect('store.db')
+    cursor = conn.cursor()
+    # شمارش کسانی که دعوت شدند و خرید کردند
+    cursor.execute("""SELECT COUNT(DISTINCT users.user_id) FROM users 
+                      JOIN orders ON users.user_id = orders.user_id 
+                      WHERE users.referred_by = ?""", (user_id,))
+    successful_invites = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(order_id) FROM orders WHERE user_id = ?", (user_id,))
+    total_purchases = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT order_id, plan_name FROM orders WHERE user_id = ?", (user_id,))
+    history = cursor.fetchall()
+    conn.close()
+    
+    text = (
+        f"👤 <b>پروفایل شما:</b>\n\n"
+        f"👥 تعداد دعوت‌های موفق (با خرید): <b>{successful_invites} نفر</b>\n"
+        f"📦 تعداد کل خریدهای شما: <b>{total_purchases} بار</b>\n\n"
+        f"📜 <b>لیست کانفیگ‌های خریداری شده شما:</b>\n"
     )
+    
+    markup = InlineKeyboardMarkup()
+    if history:
+        text += "برای دریافت و دیدن دوباره‌ی هر کانفیگ، روی دکمه‌ی مربوط به اون در زیر کلیک کن 👇"
+        for idx, item in history:
+            markup.add(InlineKeyboardButton(f"🔑 {item[0]} (کد {idx})", callback_data=f"view_config_{idx}"))
+    else:
+        text += "هیچ کانفیگی تا حالا نخریدی رفیق!"
+        
+    if message_id:
+        bot.edit_message_text(text, user_id, message_id, parse_mode="HTML", reply_markup=markup)
+    else:
+        bot.send_message(user_id, text, parse_mode="HTML", reply_markup=markup)
 
-# ─── Callback آموزش‌ها ───
-@bot.callback_query_handler(func=lambda call: call.data.startswith("tut_"))
-def cb_tutorial(call):
-    bot.answer_callback_query(call.id)
-    cid = call.message.chat.id
-    mid = call.message.message_id
-    data = call.data
-
-    if data == "tut_back" or data == "tut_menu":
-        # بازگشت به منوی اصلی آموزش
-        bot.edit_message_text(
-            chat_id=cid,
-            message_id=mid,
-            text="📚 <b>آموزش وصل شدن به کانفیگ</b>\n\n"
-                 "یکی از گزینه‌های زیر را انتخاب کنید 👇",
-            parse_mode="HTML",
-            reply_markup=kb_tutorial_menu()
-        )
-
-    elif data == "tut_back_main":
-        # بازگشت به منوی اصلی ربات
-        bot.delete_message(cid, mid)
-        bot.send_message(
-            cid,
-            "به منوی اصلی بازگشتید. 👇",
-            reply_markup=main_menu()
-        )
-
-    elif data == "tut_v2ray":
-        bot.edit_message_text(
-            chat_id=cid,
-            message_id=mid,
-            text=TEXT_V2RAY,
-            parse_mode="HTML",
-            reply_markup=kb_back_to_tutorial()
-        )
-
-    elif data == "tut_v2box":
-        bot.edit_message_text(
-            chat_id=cid,
-            message_id=mid,
-            text=TEXT_V2BOX,
-            parse_mode="HTML",
-            reply_markup=kb_back_to_tutorial()
-        )
-
-    elif data == "tut_npv":
-        bot.edit_message_text(
-            chat_id=cid,
-            message_id=mid,
-            text=TEXT_NPV,
-            parse_mode="HTML",
-            reply_markup=kb_back_to_tutorial()
-        )
-
-    elif data == "tut_download":
-        bot.edit_message_text(
-            chat_id=cid,
-            message_id=mid,
-            text="📥 <b>دانلود برنامه موردنظر</b>\n\n"
-                 "روی یکی از گزینه‌های زیر بزنید تا به صفحه دانلود هدایت شوید 👇",
-            parse_mode="HTML",
-            reply_markup=kb_download_menu()
-        )
-
-# ─── انتخاب پلن (Inline button) ───
-@bot.callback_query_handler(func=lambda call: call.data.startswith("plan_"))
-def cb_plan(call):
-    plan = PLANS.get(call.data)
-    if not plan:
-        bot.answer_callback_query(call.id, "❌ پلن یافت نشد!")
-        return
-    user_states[call.from_user.id] = {'state': 'waiting_config_name', 'plan_key': call.data}
-    bot.answer_callback_query(call.id, f"✅ {plan['name']} انتخاب شد")
-    bot.send_message(
-        call.message.chat.id,
-        f"✅ پلن <b>{plan['name']}</b> انتخاب شد.\n\n"
-        "📝 لطفاً یک <b>نام انگلیسی</b> برای کانفیگ خود وارد کنید:\n"
-        "⚠️ <i>فقط حروف انگلیسی — مثال: Alireza</i>",
-        parse_mode="HTML"
-    )
-
-# ─── تمام پیام‌های پرایوت ───
-@bot.message_handler(
-    func=lambda m: m.chat.type == 'private',
-    content_types=['text', 'photo', 'document', 'sticker', 'voice', 'video', 'audio']
-)
-def handle_private(message):
-    uid   = message.from_user.id
-    state = user_states.get(uid, {}).get('state', '')
-
-    # ── متن ──
-    if message.content_type == 'text':
-        txt = message.text.strip()
-
-        if txt == "🛒 خرید کانفیگ":
-            markup = types.InlineKeyboardMarkup(row_width=1)
-            markup.add(
-                types.InlineKeyboardButton("🩵  ۱۰ گیگابایت  ─  ۱۷۵,۰۰۰ تومان", callback_data="plan_10gb"),
-                types.InlineKeyboardButton("💙  ۲۰ گیگابایت  ─  ۳۲۵,۰۰۰ تومان", callback_data="plan_20gb"),
-                types.InlineKeyboardButton("🩷  ۳۰ گیگابایت  ─  ۴۳۰,۰۰۰ تومان", callback_data="plan_30gb"),
-                types.InlineKeyboardButton("❤️‍🔥  ۴۰ گیگابایت  ─  ۵۶۰,۰۰۰ تومان", callback_data="plan_40gb"),
-            )
-            bot.send_message(
-                message.chat.id,
-                "💎 <b>پلن‌های موجود (نامحدود):</b>\n\n"
-                "✅ تعداد کاربر: <b>نامحدود</b>\n"
-                "✅ مدت زمان: <b>نامحدود</b>\n\n"
-                "🚀 <b>سازگار با:</b>\n"
-                "📶 V2RAY  |  ⚫ V2BOX\n"
-                "🔐 NPVtunnel  |  🔐 HIDDEFY\n\n"
-                "👇 پلن مورد نظر خود را انتخاب کنید:",
-                parse_mode="HTML",
-                reply_markup=markup
-            )
-            return
-
-        if txt == "👨‍💻 پشتیبانی":
-            mk = types.InlineKeyboardMarkup()
-            mk.add(types.InlineKeyboardButton("💬 ارتباط با پشتیبانی", url=f"https://t.me/{ADMIN_USERNAME}"))
-            bot.send_message(
-                message.chat.id,
-                "👨‍💻 <b>پشتیبانی</b>\n\nبرای سوال یا پیگیری سفارش روی دکمه زیر بزنید:",
-                parse_mode="HTML",
-                reply_markup=mk
-            )
-            return
-
-        if txt == "📚 آموزش وصل شدن به کانفیگ":
-            bot.send_message(
-                message.chat.id,
-                "📚 <b>آموزش وصل شدن به کانفیگ</b>\n\n"
-                "یکی از گزینه‌های زیر را انتخاب کنید 👇",
-                parse_mode="HTML",
-                reply_markup=kb_tutorial_menu()
-            )
-            return
-
-        if state == 'waiting_config_name':
-            name = txt
-            if not name.replace(" ", "").isascii() or not name.replace(" ", "").isalpha():
-                bot.send_message(
-                    uid,
-                    "❌ نام باید فقط از <b>حروف انگلیسی</b> باشد.\n"
-                    "مثال: <code>Alireza</code>\n\nدوباره وارد کنید:",
-                    parse_mode="HTML"
-                )
-                return
-            st = user_states[uid]
-            st['config_name'] = name
-            st['state']       = 'waiting_receipt'
-            plan = PLANS[st['plan_key']]
-            bot.send_message(
-                uid,
-                "╔══════════════════════╗\n"
-                "       🛒  <b>خلاصه سفارش شما</b>\n"
-                "╚══════════════════════╝\n\n"
-                f"📦  پلن انتخابی:  <b>{plan['name']}</b>\n"
-                f"💰  مبلغ قابل پرداخت:  <b>{plan['price']}</b>\n"
-                f"🏷️  نام کانفیگ:  <code>{name}</code>\n\n"
-                "━━━━━━━━━━━━━━━━━━━━━━\n"
-                "💳  <b>اطلاعات پرداخت:</b>\n\n"
-                f"شماره کارت:\n<code>{CARD_NUMBER}</code>\n"
-                f"👤  به نام:  <b>{CARD_OWNER}</b>\n\n"
-                "━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"📸  پس از واریز <b>{plan['price']}</b>،\n"
-                "عکس رسید پرداخت را در همین چت ارسال کنید.",
-                parse_mode="HTML"
-            )
-            return
-
-        if state == 'waiting_receipt':
-            bot.send_message(uid, "❌ لطفاً فقط <b>عکس رسید</b> پرداخت را ارسال کنید.", parse_mode="HTML")
-            return
-
-        bot.send_message(uid, "برای شروع /start بزنید یا از دکمه‌های منو استفاده کنید.", reply_markup=main_menu())
-        return
-
-    # ── عکس رسید ──
-    if message.content_type == 'photo':
-        if state != 'waiting_receipt':
-            bot.send_message(uid, "❌ ابتدا یک پلن انتخاب کنید.", reply_markup=main_menu())
-            return
-        st          = user_states[uid]
-        plan        = PLANS[st['plan_key']]
-        config_name = st['config_name']
-        user        = message.from_user
-        uname       = f"@{user.username}" if user.username else "ندارد"
-        caption = (
-            "🚨 <b>سفارش جدید دریافت شد!</b>\n\n"
-            f"📦 پلن: <b>{plan['name']} — {plan['price']}</b>\n"
-            f"🏷️ نام کانفیگ: <a href='tg://user?id={uid}'>{config_name}</a>\n"
-            f"👤 نام: <b>{user.first_name}</b>\n"
-            f"🆔 یوزرنیم: {uname}\n"
-            f"🔢 آیدی: <code>{uid}</code>\n\n"
-            "✅ برای ارسال کانفیگ روی این پیام <b>ریپلای</b> کنید."
-        )
-        try:
-            sent = bot.send_photo(GROUP_ID, message.photo[-1].file_id, caption=caption, parse_mode="HTML")
-            group_msg_to_user[sent.message_id] = uid
-            st['state'] = 'done'
-            bot.send_message(
-                uid,
-                "✅ <b>رسید شما با موفقیت ثبت شد!</b>\n\n"
-                "⏳ در حال بررسی توسط ادمین...\n"
-                "پس از تایید، کانفیگ برای شما ارسال می‌شود.\n\n"
-                "🙏 ممنون از خرید شما!",
-                parse_mode="HTML",
-                reply_markup=main_menu()
-            )
-        except Exception as e:
-            print(f"[ERROR] {e}")
-            bot.send_message(uid, "⚠️ خطا در ثبت سفارش. لطفاً دوباره رسید را ارسال کنید.")
-        return
-
-    if state == 'waiting_receipt':
-        bot.send_message(uid, "❌ لطفاً فقط <b>عکس رسید</b> پرداخت را ارسال کنید.", parse_mode="HTML")
-
-# ─── ریپلای ادمین در گروه ───
-@bot.message_handler(
-    func=lambda m: m.chat.id == GROUP_ID and m.reply_to_message is not None
-)
-def handle_group_reply(message):
-    replied_id = message.reply_to_message.message_id
-    user_id    = group_msg_to_user.get(replied_id)
-    if not user_id:
-        return
-    intro = "✅ <b>کانفیگ شما آماده است:</b>\n\n"
-    try:
-        ct = message.content_type
-        if ct == 'text':
-            bot.send_message(user_id, intro + message.text, parse_mode="HTML")
-        elif ct == 'photo':
-            extra = f"\n\n{message.caption}" if message.caption else ""
-            bot.send_photo(user_id, message.photo[-1].file_id, caption=intro+extra, parse_mode="HTML")
-        elif ct == 'document':
-            extra = f"\n\n{message.caption}" if message.caption else ""
-            bot.send_document(user_id, message.document.file_id, caption=intro+extra, parse_mode="HTML")
+# --- مدیریت دکمه‌های Inline ---
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callbacks(call):
+    user_id = call.message.chat.id
+    msg_id = call.message.message_id
+    
+    if call.data == "back_to_store":
+        send_store_menu(user_id, msg_id)
+    elif call.data == "back_to_wallet":
+        send_wallet_menu(user_id, msg_id)
+        
+    elif call.data.startswith("buy_"):
+        plan_key = call.data.split("_")[1]
+        process_plan_purchase(user_id, msg_id, plan_key)
+        
+    elif call.data == "wallet_charge":
+        text = f"💳 <b>درخواست شارژ کیف پول</b>\n\n💰 لطفاً مبلغ مورد نظرت رو به تومان وارد کن:\n(مثال: 175000)\n\n"
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("🔙 برگشت", callback_data="back_to_wallet"))
+        msg = bot.edit_message_text(text, user_id, msg_id, parse_mode="HTML", reply_markup=markup)
+        bot.register_next_step_handler(msg, receive_charge_amount)
+        
+    elif call.data.startswith("view_config_"):
+        order_id = int(call.data.split("_")[2])
+        conn = sqlite3.connect('store.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT plan_name, config_data FROM orders WHERE order_id = ? AND user_id = ?", (order_id, user_id))
+        res = cursor.fetchone()
+        conn.close()
+        if res and res[1]:
+            bot.send_message(user_id, f"📦 <b>کانفیگ شما برای پلن {res[0]}:</b>\n\n<code>{res[1]}</code>", parse_mode="HTML")
         else:
-            bot.copy_message(user_id, GROUP_ID, message.message_id)
-        bot.reply_to(message, f"✅ کانفیگ به کاربر <code>{user_id}</code> ارسال شد.", parse_mode="HTML")
-        group_msg_to_user.pop(replied_id, None)
-    except Exception as e:
-        bot.reply_to(message, f"❌ خطا: <code>{e}</code>", parse_mode="HTML")
+            bot.send_message(user_id, "❌ این کانفیگ هنوز توسط ادمین صادر نشده یا در دسترس نیست.")
+            
+    bot.answer_callback_query(call.id)
 
-# ─── اجرا ───
+# --- فرآیند خرید خودکار با کیف پول ---
+def process_plan_purchase(user_id, msg_id, plan_key):
+    info = PLANS[plan_key]
+    conn = sqlite3.connect('store.db')
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT balance, referred_by FROM users WHERE user_id = ?", (user_id,))
+    res = cursor.fetchone()
+    balance, ref = res[0], res[1]
+    
+    price = info["discount_price"] if ref else info["price"]
+    
+    if balance >= price:
+        # کسر موجودی و ثبت سفارش
+        new_balance = balance - price
+        cursor.execute("UPDATE users SET balance = ? WHERE user_id = ?", (new_balance, user_id))
+        cursor.execute("INSERT INTO orders (user_id, plan_name) VALUES (?, ?)", (user_id, info["name"]))
+        order_id = cursor.lastrowid
+        conn.commit()
+        
+        # واریز سود پورسانت رفرال برای معرف (۷ درصد قیمت کل پلن)
+        if ref:
+            reward = int(info["price"] * 0.07)
+            cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (reward, ref))
+            conn.commit()
+            try: bot.send_message(ref, f"🎉 یکی از دوستانی که دعوت کردی خرید انجام داد و <b>{reward:,} تومان</b> سود به کیف پولت واریز شد!", parse_mode="HTML")
+            except: pass
+            
+            # بررسی قانون ۱۰ دعوت موفق برای هدیه ۵ گیگی
+            cursor.execute("SELECT COUNT(DISTINCT users.user_id) FROM users JOIN orders ON users.user_id = orders.user_id WHERE users.referred_by = ?", (ref,))
+            invites_count = cursor.fetchone()[0]
+            cursor.execute("SELECT gift_claimed FROM users WHERE user_id = ?", (ref,))
+            gift_claimed = cursor.fetchone()[0]
+            
+            if invites_count >= 10 and gift_claimed == 0:
+                cursor.execute("UPDATE users SET gift_claimed = 1 WHERE user_id = ?", (ref,))
+                conn.commit()
+                # اعلام به ادمین در گروه برای ریپلای کانفیگ هدیه
+                bot.send_message(ADMIN_GROUP_ID, f"🎁🏆 <b>کاربر برنده جایزه دعوت شد!</b>\n\nکاربر آیدی: <code>{ref}</code> موفق شد ۱۰ نفر خریدار واقعی دعوت کنه!\nلطفاً روی همین پیام <u>کانفیگ هدیه ۵ گیگابایتی</u> رو ریپلای کنید.")
+
+        conn.close()
+        
+        bot.edit_message_text(f"✅ <b>خرید با موفقیت انجام شد!</b>\n💰 مبلغ {price:,} تومان از کیف پول شما کسر شد.\nسفارش شما برای ادمین جهت صادر کردن کانفیگ ارسال گردید و به زودی تحویل داده میشه.", user_id, msg_id, parse_mode="HTML")
+        
+        # اطلاع‌رسانی در گروه ادمین
+        bot.send_message(ADMIN_GROUP_ID, f"🛒 <b>خرید جدید با کیف پول!</b>\n\n👤 خریدار: <code>{user_id}</code>\n📦 پلن: {info['name']}\n💰 کسر شده: {price:,} تومان\n\n🆔 شماره سفارش: <code>{order_id}</code>\n🔴 <b>ادمین عزیز، لطفاً کانفیگ رو روی همین پیام ریپلای کن تا برای کاربر فرستاده بشه.</b>", parse_mode="HTML")
+    else:
+        conn.close()
+        markup = InlineKeyboardMarkup().add(InlineKeyboardButton("💳 شارژ کیف پول", callback_data="wallet_charge"), InlineKeyboardButton("🔙 برگشت", callback_data="back_to_store"))
+        bot.edit_message_text(f"❌ <b>موجودی کیف پول شما کافی نیست رفیق!</b>\n\n💵 قیمت پلن: {price:,} تومان\n💼 موجودی شما: {balance:,} تومان\n\nلطفاً اول کیف پولت رو شارژ کن.", user_id, msg_id, parse_mode="HTML", reply_markup=markup)
+
+# --- مراحل دریافت مبلغ و رسید شارژ حساب ---
+def receive_charge_amount(message):
+    user_id = message.chat.id
+    amount_text = message.text
+    
+    if not amount_text.isdigit():
+        msg = bot.send_message(user_id, "❌ لطفا فقط عدد وارد کنید. دوباره مبلغ رو بفرستید:")
+        bot.register_next_step_handler(msg, receive_charge_amount)
+        return
+        
+    amount = int(amount_text)
+    instructions = (
+        f"💵 <b>درخواست شارژ حساب به مبلغ: {amount:,} تومان</b>\n\n"
+        f"💳 شماره کارت جهت واریز:\n<code>{CARD_NUMBER}</code>\n"
+        f"👤 به نام: {ACCOUNT_NAME}\n\n"
+        f"📥 لطفاً پس از واریز، <b>فقط عکس رسید پرداخت</b> رو برام بفرست تا ادمین تاییدش کنه."
+    )
+    msg = bot.send_message(user_id, instructions, parse_mode="HTML")
+    bot.register_next_step_handler(msg, receive_receipt_photo, amount)
+
+def receive_receipt_photo(message, amount):
+    user_id = message.chat.id
+    if message.content_type == 'photo':
+        bot.send_message(user_id, "✅ رسید شما دریافت شد و برای تایید به گروه حسابداری علیرضا ارسال شد. به محض تایید حساب شما شارژ میشه!")
+        
+        # ارسال رسید به گروه ادمین‌ها
+        admin_msg = bot.send_photo(
+            ADMIN_GROUP_ID, 
+            message.photo[-1].file_id, 
+            caption=f"💰 <b>رسید جدید برای شارژ کیف پول!</b>\n\n👤 کاربر خریدار: <code>{user_id}</code>\n💵 مبلغ اعلامی کاربر: <b>{amount:,}</b> تومان\n\n🔴 <b>ادمین عزیز، برای تایید نهایی دقیقاً مبلغ تایید شده رو به تومان روی همین عکس ریپلای کن.</b>",
+            parse_mode="HTML"
+        )
+        
+        # ذخیره موقت درخواست در دیتابیس برای بررسی ریپلای ادمین
+        conn = sqlite3.connect('store.db')
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO pending_deposits (msg_id, user_id, amount) VALUES (?, ?, ?)", (admin_msg.message_id, user_id, amount))
+        conn.commit()
+        conn.close()
+    else:
+        msg = bot.send_message(user_id, "❌ خطاست! لطفاً فقط فایل عکسِ رسید رو بفرستید:")
+        bot.register_next_step_handler(msg, receive_receipt_photo, amount)
+
+# --- هندلر جامع ریپلای‌های ادمین در گروه ادمین ---
+@bot.message_handler(func=lambda m: m.chat.id == ADMIN_GROUP_ID and m.reply_to_message is not None)
+def handle_admin_replies(message):
+    reply_id = message.reply_to_message.message_id
+    admin_text = message.text
+    
+    conn = sqlite3.connect('store.db')
+    cursor = conn.cursor()
+    
+    # حالت اول: تایید فیش و شارژ کیف پول
+    cursor.execute("SELECT user_id, amount FROM pending_deposits WHERE msg_id = ?", (reply_id,))
+    deposit = cursor.fetchone()
+    
+    if deposit:
+        user_id, default_amount = deposit[0], deposit[1]
+        final_amount = int(admin_text) if admin_text.isdigit() else default_amount
+        
+        cursor.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (final_amount, user_id))
+        cursor.execute("DELETE FROM pending_deposits WHERE msg_id = ?", (reply_id,))
+        conn.commit()
+        conn.close()
+        
+        bot.send_message(ADMIN_GROUP_ID, f"✅ حساب کاربر <code>{user_id}</code> با موفقیت به مبلغ {final_amount:,} تومان شارژ شد.")
+        bot.send_message(user_id, f"🎉 <b>کیف پول شما شارژ شد!</b>\n\n💵 مبلغ <b>{final_amount:,} تومان</b> به حساب شما اضافه شد. الان می‌تونی از دکمه فروشگاه خریدت رو خودکار نهایی کنی!")
+        return
+
+    # حالت دوم: تحویل کانفیگ عادی یا تحویل جایزه ۱۰ رفرال
+    orig_caption = message.reply_to_message.caption or ""
+    orig_text = message.reply_to_message.text or ""
+    
+    # بررسی خریدهای کیف پول
+    if "خرید جدید با کیف پول!" in orig_text:
+        lines = orig_text.split('\n')
+        target_user = None
+        order_id = None
+        for line in lines:
+            if "خریدار:" in line: target_user = int(line.split('<code>')[1].split('</code>')[0])
+            if "شماره سفارش:" in line: order_id = int(line.split('<code>')[1].split('</code>')[0])
+            
+        if target_user and order_id:
+            cursor.execute("UPDATE orders SET config_data = ? WHERE order_id = ?", (admin_text, order_id))
+            conn.commit()
+            conn.close()
+            bot.send_message(target_user, f"🚀 <b>کانفیگ شما صادر شد رفیق!</b>\n\n📥 هر زمان خواستید می‌تونید توی منوی «👤 حساب کاربری» هم بهش دسترسی داشته باشید.\n\n<code>{admin_text}</code>", parse_mode="HTML")
+            bot.send_message(ADMIN_GROUP_ID, "✅ کانفیگ با موفقیت برای کاربر ارسال و در سوابقش ذخیره شد.")
+            return
+
+    # بررسی اهدای جایزه ۱۰ رفرال فعال
+    if "🎁🏆 کاربر برنده جایزه دعوت شد!" in orig_text:
+        lines = orig_text.split('\n')
+        target_user = None
+        for line in lines:
+            if "کاربر آیدی:" in line: target_user = int(line.split('<code>')[1].split('</code>')[0])
+            
+        if target_user:
+            conn.close()
+            thanks_msg = (
+                f"❤️ <b>هدیه ویژه علیرضا تقدیم به شما رفیق با معرفت!</b> 🥰\n\n"
+                f"دمت گرم که ربات ما رو به دوستات معرفی کردی و باعث شدی خانواده‌مون بزرگتر بشه. "
+                f"این کانفیگ ۵ گیگابایتی هدیه، به پاس قدردانی از حمایت‌های بی‌دریغ شماست:\n\n"
+                f"<code>{admin_text}</code>\n\n"
+                f"امیدوارم از سرعتش لذت ببری! باز هم دوستات رو دعوت کن و هدیه بگیر 😉✨"
+            )
+            bot.send_message(target_user, thanks_msg, parse_mode="HTML")
+            bot.send_message(ADMIN_GROUP_ID, "✅ کانفیگ هدیه با متن تقدیر گرم برای کاربر ارسال شد.")
+            return
+
+    conn.close()
+
 if __name__ == "__main__":
-    web_thread = Thread(target=run_web, daemon=True)
-    web_thread.start()
-    print("🤖 Bot started (polling)...")
-    bot.infinity_polling()
+    Thread(target=lambda: app.run(host='0.0.0.0', port=7860)).start()
+    print("Advanced Bot is starting...")
+    bot.infinity_polling(timeout=60, long_polling_timeout=60)
