@@ -4,10 +4,10 @@ import telebot
 from telebot import types
 
 # =================== تنظیمات ===================
-BOT_TOKEN      = "8773215261:AAF67pQ9AHZrzvMOZlNbsnaG2-uoTo3HHyk"
+BOT_TOKEN      = "8623315494:AAEQLWDt-IUC39TIUJIVnRRZGgVvo83Pepw"
 ADMIN_ID       = 7374971382
 ADMIN_USERNAME = "AIireza_1383"
-GROUP_ID       = -1003649866579
+GROUP_ID       = -1004294169429
 CARD_NUMBER    = "5892101542283284"
 CARD_OWNER     = "علیرضا وحدانی اصل"
 # ================================================
@@ -25,6 +25,125 @@ PLANS = {
     "plan_40gb": {"name": "۴۰ گیگابایت", "price": "۵۶۰,۰۰۰ تومان"},
 }
 
+# =================== متون آموزش ===================
+
+TEXT_V2RAY = (
+    "📱 <b>آموزش اتصال با V2RayNG</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "ابتدا لینکی که برایتان فرستادیم را <b>کپی (Copy)</b> کنید.\n"
+    "(دستتان را روی لینک نگه دارید و گزینه کپی را بزنید)\n\n"
+    "سپس برنامه <b>V2RayNG</b> را باز کنید و مراحل زیر را قدم به قدم انجام دهید:\n\n"
+    "1️⃣ روی علامت <b>+</b> (به‌علاوه) در بالای صفحه بزنید.\n\n"
+    "2️⃣ گزینه <b>Import config from Clipboard</b>\n"
+    "   (وارد کردن کانفیگ از کلیپ‌بورد) را انتخاب کنید.\n\n"
+    "3️⃣ روی <b>سه نقطه</b> بالا سمت راست صفحه بزنید.\n\n"
+    "4️⃣ گزینه <b>Real delay all configuration</b>\n"
+    "   (تاخیر کانفیگ‌های گروه فعلی) را انتخاب کنید.\n"
+    "   ⏳ کمی صبر کنید تا جلوی سرورها عددهای <b>سبزرنگ</b> ظاهر شود.\n\n"
+    "5️⃣ دوباره روی همان <b>سه نقطه</b> بالا سمت راست بزنید.\n\n"
+    "6️⃣ گزینه <b>Sorting by test results</b>\n"
+    "   (انتخاب بر اساس نتایج آزمایش) را بزنید.\n"
+    "   ✅ با این کار، قوی‌ترین سرورِ آن لحظه به ردیف اول می‌آید.\n\n"
+    "7️⃣ روی <b>دایره بزرگ</b> پایین صفحه بزنید تا متصل شوید. 🟢\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━\n"
+    "💡 <b>راهنمای حل مشکل کندی سرعت:</b>\n\n"
+    "هر وقت سرعت افت کرد، نیازی به دریافت کانفیگ جدید نیست.\n"
+    "فقط برنامه را باز کنید و مراحل <b>۳ تا ۶</b> را تکرار کنید.\n"
+    "برنامه خودکار بهترین سرور جایگزین را فعال می‌کند.\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━\n"
+    "📊 همچنین می‌توانید از طریق <b>ساب‌لینک</b> ارسال‌شده،\n"
+    "مقدار مصرف و حجم باقی‌مانده را مشاهده کنید."
+)
+
+TEXT_V2BOX = (
+    "📱 <b>آموزش اتصال با V2Box (از طریق ساب‌لینک)</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "برنامه <b>V2Box</b> را باز کنید و مراحل زیر را دنبال کنید:\n\n"
+    "1️⃣ در صفحه اصلی، روی آیکون <b>پروفایل</b> (گوشه پایین) بزنید.\n\n"
+    "2️⃣ گزینه <b>Subscriptions</b> (اشتراک‌ها) را انتخاب کنید.\n\n"
+    "3️⃣ روی دکمه <b>+</b> (افزودن) بزنید.\n\n"
+    "4️⃣ یک نام دلخواه در کادر <b>Name</b> وارد کنید.\n"
+    "   (مثال: My VPN)\n\n"
+    "5️⃣ <b>ساب‌لینک</b> ارسال‌شده را در کادر <b>URL</b> وارد کنید.\n\n"
+    "6️⃣ روی <b>Save</b> (ذخیره) بزنید.\n\n"
+    "7️⃣ ⏳ چند ثانیه صبر کنید تا کانفیگ‌ها بارگذاری شوند.\n\n"
+    "8️⃣ به صفحه اصلی برگردید.\n"
+    "   لیست سرورها را مشاهده می‌کنید.\n\n"
+    "9️⃣ روی <b>بهترین سرور</b> (کمترین پینگ) ضربدر بزنید تا انتخاب شود.\n\n"
+    "🔟 روی دکمه <b>اتصال</b> در پایین صفحه بزنید. 🟢\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━\n"
+    "💡 <b>نکته:</b> برای به‌روزرسانی سرورها، وارد بخش\n"
+    "Subscriptions شوید و گزینه <b>Update</b> را بزنید.\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━\n"
+    "📊 همچنین می‌توانید از طریق <b>ساب‌لینک</b> ارسال‌شده،\n"
+    "مقدار مصرف و حجم باقی‌مانده را مشاهده کنید."
+)
+
+TEXT_NPV = (
+    "📱 <b>آموزش اتصال با NPV Tunnel</b>\n"
+    "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    "برنامه <b>NPV Tunnel</b> را باز کنید و مراحل زیر را دنبال کنید:\n\n"
+    "1️⃣ در پایین صفحه روی گزینه <b>Subs</b> بزنید.\n\n"
+    "2️⃣ روی دکمه <b>+</b> بزنید.\n\n"
+    "3️⃣ کادر اول (نام) را <i>اختیاری</i> پر کنید.\n"
+    "   (می‌توانید هر نامی مثل My VPN بنویسید)\n\n"
+    "4️⃣ در کادر دوم، <b>ساب‌لینک</b> ارسال‌شده را وارد کنید.\n\n"
+    "5️⃣ ⏳ چند ثانیه صبر کنید، سپس روی\n"
+    "   آیکون <b>ابر ☁️</b> در پایین کادر کلیک کنید تا سرورها بارگذاری شوند.\n\n"
+    "6️⃣ روی گزینه <b>Ping</b> بزنید و صبر کنید.\n\n"
+    "7️⃣ از لیست، روی سروری که <b>پینگ کمتری</b> دارد کلیک کنید تا انتخاب شود.\n\n"
+    "8️⃣ در پایین صفحه روی آیکون <b>خانه 🏠</b> بزنید.\n\n"
+    "9️⃣ روی دکمه <b>اتصال</b> بزنید. 🟢\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━\n"
+    "💡 <b>نکته:</b> هر بار که کانکشن ضعیف شد،\n"
+    "مراحل Ping و انتخاب سرور را تکرار کنید.\n\n"
+    "━━━━━━━━━━━━━━━━━━━━━━\n"
+    "📊 همچنین می‌توانید از طریق <b>ساب‌لینک</b> ارسال‌شده،\n"
+    "مقدار مصرف و حجم باقی‌مانده را مشاهده کنید."
+)
+
+# =================== کیبوردها ===================
+
+def kb_tutorial_menu():
+    """منوی اصلی آموزش"""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton("📶 آموزش V2RayNG",      callback_data="tut_v2ray"),
+        types.InlineKeyboardButton("⚫ آموزش V2Box",         callback_data="tut_v2box"),
+        types.InlineKeyboardButton("🔐 آموزش NPV Tunnel",   callback_data="tut_npv"),
+        types.InlineKeyboardButton("📥 دانلود برنامه موردنظر", callback_data="tut_download"),
+        types.InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="tut_back_main"),
+    )
+    return markup
+
+def kb_back_to_tutorial():
+    """دکمه بازگشت به منوی آموزش"""
+    markup = types.InlineKeyboardMarkup()
+    markup.add(
+        types.InlineKeyboardButton("🔙 بازگشت به آموزش‌ها", callback_data="tut_back"),
+    )
+    return markup
+
+def kb_download_menu():
+    """منوی دانلود برنامه‌ها"""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton(
+            "📶 دانلود V2RayNG",
+            url="https://play.google.com/store/apps/details?id=com.v2ray.ang"
+        ),
+        types.InlineKeyboardButton(
+            "⚫ دانلود V2Box",
+            url="https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box"
+        ),
+        types.InlineKeyboardButton(
+            "🔐 دانلود NPV Tunnel",
+            url="https://play.google.com/store/apps/details?id=com.napsternetlabs.napsternetv"
+        ),
+        types.InlineKeyboardButton("🔙 بازگشت به آموزش‌ها", callback_data="tut_back"),
+    )
+    return markup
+
 @app.route('/')
 def home():
     return "Bot is running!", 200
@@ -36,7 +155,8 @@ def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
         types.KeyboardButton("🛒 خرید کانفیگ"),
-        types.KeyboardButton("👨‍💻 پشتیبانی")
+        types.KeyboardButton("👨‍💻 پشتیبانی"),
+        types.KeyboardButton("📚 آموزش وصل شدن به کانفیگ"),
     )
     return markup
 
@@ -54,6 +174,71 @@ def cmd_start(message):
         parse_mode="HTML",
         reply_markup=main_menu()
     )
+
+# ─── Callback آموزش‌ها ───
+@bot.callback_query_handler(func=lambda call: call.data.startswith("tut_"))
+def cb_tutorial(call):
+    bot.answer_callback_query(call.id)
+    cid = call.message.chat.id
+    mid = call.message.message_id
+    data = call.data
+
+    if data == "tut_back" or data == "tut_menu":
+        # بازگشت به منوی اصلی آموزش
+        bot.edit_message_text(
+            chat_id=cid,
+            message_id=mid,
+            text="📚 <b>آموزش وصل شدن به کانفیگ</b>\n\n"
+                 "یکی از گزینه‌های زیر را انتخاب کنید 👇",
+            parse_mode="HTML",
+            reply_markup=kb_tutorial_menu()
+        )
+
+    elif data == "tut_back_main":
+        # بازگشت به منوی اصلی ربات
+        bot.delete_message(cid, mid)
+        bot.send_message(
+            cid,
+            "به منوی اصلی بازگشتید. 👇",
+            reply_markup=main_menu()
+        )
+
+    elif data == "tut_v2ray":
+        bot.edit_message_text(
+            chat_id=cid,
+            message_id=mid,
+            text=TEXT_V2RAY,
+            parse_mode="HTML",
+            reply_markup=kb_back_to_tutorial()
+        )
+
+    elif data == "tut_v2box":
+        bot.edit_message_text(
+            chat_id=cid,
+            message_id=mid,
+            text=TEXT_V2BOX,
+            parse_mode="HTML",
+            reply_markup=kb_back_to_tutorial()
+        )
+
+    elif data == "tut_npv":
+        bot.edit_message_text(
+            chat_id=cid,
+            message_id=mid,
+            text=TEXT_NPV,
+            parse_mode="HTML",
+            reply_markup=kb_back_to_tutorial()
+        )
+
+    elif data == "tut_download":
+        bot.edit_message_text(
+            chat_id=cid,
+            message_id=mid,
+            text="📥 <b>دانلود برنامه موردنظر</b>\n\n"
+                 "روی یکی از گزینه‌های زیر بزنید تا به صفحه دانلود هدایت شوید 👇",
+            parse_mode="HTML",
+            reply_markup=kb_download_menu()
+        )
 
 # ─── انتخاب پلن (Inline button) ───
 @bot.callback_query_handler(func=lambda call: call.data.startswith("plan_"))
@@ -115,6 +300,16 @@ def handle_private(message):
                 "👨‍💻 <b>پشتیبانی</b>\n\nبرای سوال یا پیگیری سفارش روی دکمه زیر بزنید:",
                 parse_mode="HTML",
                 reply_markup=mk
+            )
+            return
+
+        if txt == "📚 آموزش وصل شدن به کانفیگ":
+            bot.send_message(
+                message.chat.id,
+                "📚 <b>آموزش وصل شدن به کانفیگ</b>\n\n"
+                "یکی از گزینه‌های زیر را انتخاب کنید 👇",
+                parse_mode="HTML",
+                reply_markup=kb_tutorial_menu()
             )
             return
 
