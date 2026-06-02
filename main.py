@@ -4,7 +4,7 @@ import telebot
 from telebot import types
 
 # =================== تنظیمات ===================
-BOT_TOKEN      = "8623315494:AAEQLWDt-IUC39TIUJIVnRRZGgVvo83Pepw"
+BOT_TOKEN      = "8773215261:AAF67pQ9AHZrzvMOZlNbsnaG2-uoTo3HHyk"
 ADMIN_ID       = 7374971382
 ADMIN_USERNAME = "AIireza_1383"
 GROUP_ID       = -1003649866579
