@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VPN Bot</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --green:       #22c55e;
+    --green-dark:  #16a34a;
+    --green-light: #bbf7d0;
+    --green-glow:  rgba(34,197,94,0.25);
+    --bg:          #0f1117;
+    --card:        #1a1f2e;
+    --card2:       #222840;
+    --text:        #f0f4ff;
+    --muted:       #8892b0;
+    --border:      rgba(34,197,94,0.2);
+  }
+
+  body {
+    font-family: 'Vazirmatn', Tahoma, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 16px;
+    padding-bottom: 80px;
+  }
+
+  /* ── Header ── */
+  .header {
+    text-align: center;
+    padding: 20px 0 16px;
+  }
+  .header .logo {
+    width: 60px; height: 60px;
+    background: linear-gradient(135deg, var(--green), var(--green-dark));
+    border-radius: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    margin-bottom: 10px;
+    box-shadow: 0 0 24px var(--green-glow);
+  }
+  .header h1 { font-size: 20px; font-weight: 700; color: var(--green); }
+  .header p  { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin: 16px 0;
+    background: var(--card);
+    border-radius: 14px;
+    padding: 4px;
+  }
+  .tab {
+    flex: 1;
+    padding: 9px 4px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 11px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all .2s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+  }
+  .tab .icon { font-size: 18px; }
+  .tab.active {
+    background: var(--green);
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 2px 12px var(--green-glow);
+  }
+
+  /* ── Pages ── */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── Plan Card ── */
+  .plan-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    cursor: pointer;
+    transition: all .2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .plan-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, var(--green-glow), transparent);
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  .plan-card:hover::before, .plan-card:active::before { opacity: 1; }
+  .plan-card:active { transform: scale(0.98); }
+
+  .plan-icon {
+    width: 48px; height: 48px;
+    background: linear-gradient(135deg, var(--green), var(--green-dark));
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+    box-shadow: 0 0 12px var(--green-glow);
+  }
+  .plan-info { flex: 1; }
+  .plan-name { font-size: 15px; font-weight: 700; color: var(--text); }
+  .plan-sub  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .plan-price {
+    font-size: 14px; font-weight: 700;
+    color: var(--green);
+    text-align: left;
+    direction: ltr;
+  }
+  .plan-badge {
+    position: absolute;
+    top: 10px; left: 10px;
+    background: var(--green);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+  }
+
+  /* ── Wallet ── */
+  .wallet-box {
+    background: linear-gradient(135deg, var(--green-dark), #065f46);
+    border-radius: 20px;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 24px var(--green-glow);
+  }
+  .wallet-box .label { font-size: 13px; color: var(--green-light); opacity: .8; }
+  .wallet-box .amount { font-size: 32px; font-weight: 800; color: #fff; margin: 6px 0; direction: ltr; }
+  .wallet-box .unit { font-size: 13px; color: var(--green-light); }
+
+  /* ── Buttons ── */
+  .btn {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all .18s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .btn-green {
+    background: linear-gradient(135deg, var(--green), var(--green-dark));
+    color: #fff;
+    box-shadow: 0 4px 16px var(--green-glow);
+  }
+  .btn-green:active { transform: scale(0.97); box-shadow: none; }
+  .btn-outline {
+    background: transparent;
+    border: 1.5px solid var(--green);
+    color: var(--green);
+  }
+  .btn-outline:active { background: var(--green-glow); }
+
+  /* ── Info Row ── */
+  .info-row {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    border: 1px solid var(--border);
+  }
+  .info-row .key { font-size: 13px; color: var(--muted); }
+  .info-row .val { font-size: 14px; font-weight: 600; color: var(--text); }
+  .info-row .val.green { color: var(--green); }
+
+  /* ── Referral box ── */
+  .ref-box {
+    background: var(--card2);
+    border: 1px dashed var(--green);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 12px;
+    text-align: center;
+  }
+  .ref-box .ref-title { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .ref-box .ref-link {
+    font-size: 12px;
+    color: var(--green);
+    word-break: break-all;
+    direction: ltr;
+    background: var(--bg);
+    padding: 8px 10px;
+    border-radius: 8px;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  /* ── Section title ── */
+  .section-title {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 14px 0 8px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .5px;
+  }
+
+  /* ── Modal ── */
+  .overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.7);
+    z-index: 100;
+    align-items: flex-end;
+    justify-content: center;
+  }
+  .overlay.open { display: flex; }
+  .modal {
+    background: var(--card);
+    border-radius: 24px 24px 0 0;
+    padding: 24px;
+    width: 100%;
+    max-height: 85vh;
+    overflow-y: auto;
+    animation: slideUp .25s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(40px); opacity: 0; }
+    to   { transform: translateY(0);    opacity: 1; }
+  }
+  .modal-title {
+    font-size: 18px; font-weight: 800;
+    color: var(--green);
+    margin-bottom: 16px;
+    text-align: center;
+  }
+  .modal-divider {
+    height: 1px; background: var(--border);
+    margin: 14px 0;
+  }
+  .modal .close-btn {
+    position: absolute;
+    top: 16px; left: 16px;
+    background: var(--card2);
+    border: none;
+    color: var(--muted);
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal { position: relative; }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed;
+    bottom: 90px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--green);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 30px;
+    font-size: 14px;
+    font-weight: 600;
+    opacity: 0;
+    transition: all .3s;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 200;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── Tag ── */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--green-glow);
+    border: 1px solid var(--green);
+    color: var(--green);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin: 2px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">🔐</div>
+  <h1>VPN حرفه‌ای</h1>
+  <p>سرعت بالا · بدون محدودیت · نامحدود</p>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab active" onclick="showTab('plans')">
+    <span class="icon">🛒</span>خرید
+  </button>
+  <button class="tab" onclick="showTab('wallet')">
+    <span class="icon">👛</span>کیف پول
+  </button>
+  <button class="tab" onclick="showTab('account')">
+    <span class="icon">👤</span>حساب من
+  </button>
+  <button class="tab" onclick="showTab('support')">
+    <span class="icon">💬</span>پشتیبانی
+  </button>
+</div>
+
+<!-- ═══════ PAGE: Plans ═══════ -->
+<div id="page-plans" class="page active">
+  <div class="section-title">✅ کاربر نامحدود · مدت نامحدود</div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;">
+    <span class="tag">📶 V2RAY</span>
+    <span class="tag">⚫ V2BOX</span>
+    <span class="tag">🔐 NPVtunnel</span>
+    <span class="tag">🔐 HIDDEFY</span>
+  </div>
+
+  <div class="plan-card" onclick="openPlan('plan_10gb')">
+    <div class="plan-icon">🩵</div>
+    <div class="plan-info">
+      <div class="plan-name">۱۰ گیگابایت</div>
+      <div class="plan-sub">نامحدود · بدون قطعی</div>
+    </div>
+    <div class="plan-price">150,000<br><small style="font-size:10px;color:var(--muted)">تومان</small></div>
+  </div>
+
+  <div class="plan-card" onclick="openPlan('plan_20gb')">
+    <div class="plan-badge">محبوب</div>
+    <div class="plan-icon">💙</div>
+    <div class="plan-info">
+      <div class="plan-name">۲۰ گیگابایت</div>
+      <div class="plan-sub">نامحدود · بدون قطعی</div>
+    </div>
+    <div class="plan-price">300,000<br><small style="font-size:10px;color:var(--muted)">تومان</small></div>
+  </div>
+
+  <div class="plan-card" onclick="openPlan('plan_30gb')">
+    <div class="plan-icon">🩷</div>
+    <div class="plan-info">
+      <div class="plan-name">۳۰ گیگابایت</div>
+      <div class="plan-sub">نامحدود · بدون قطعی</div>
+    </div>
+    <div class="plan-price">400,000<br><small style="font-size:10px;color:var(--muted)">تومان</small></div>
+  </div>
+
+  <div class="plan-card" onclick="openPlan('plan_40gb')">
+    <div class="plan-icon">❤️‍🔥</div>
+    <div class="plan-info">
+      <div class="plan-name">۴۰ گیگابایت</div>
+      <div class="plan-sub">نامحدود · بدون قطعی</div>
+    </div>
+    <div class="plan-price">520,000<br><small style="font-size:10px;color:var(--muted)">تومان</small></div>
+  </div>
+</div>
+
+<!-- ═══════ PAGE: Wallet ═══════ -->
+<div id="page-wallet" class="page">
+  <div class="wallet-box">
+    <div class="label">موجودی کیف پول</div>
+    <div class="amount">0</div>
+    <div class="unit">تومان</div>
+  </div>
+  <button class="btn btn-green" onclick="showToast('در ربات مبلغ مورد نظر را وارد کنید 👆')">
+    ➕ شارژ کیف پول
+  </button>
+  <button class="btn btn-outline" onclick="showToast('تاریخچه تراکنش‌ها در ربات موجود است')">
+    📋 تاریخچه
+  </button>
+</div>
+
+<!-- ═══════ PAGE: Account ═══════ -->
+<div id="page-account" class="page">
+  <div class="section-title">اطلاعات حساب</div>
+
+  <div class="info-row">
+    <span class="key">👤 نام</span>
+    <span class="val" id="user-name">کاربر عزیز</span>
+  </div>
+  <div class="info-row">
+    <span class="key">👥 دعوت‌های موفق</span>
+    <span class="val green">0 نفر</span>
+  </div>
+  <div class="info-row">
+    <span class="key">🛒 تعداد خرید</span>
+    <span class="val">0</span>
+  </div>
+
+  <div class="section-title">🎁 سیستم دعوت دوستان</div>
+  <div class="ref-box">
+    <div class="ref-title">لینک اختصاصی شما</div>
+    <code class="ref-link" id="ref-link">https://t.me/YourBot?start=XXXXXXX</code>
+    <button class="btn btn-green" style="margin:0" onclick="copyRef()">📋 کپی لینک</button>
+  </div>
+
+  <div class="info-row">
+    <span class="key">🎁 تخفیف دوست دعوت‌شده</span>
+    <span class="val green">۵٪</span>
+  </div>
+  <div class="info-row">
+    <span class="key">🏆 تخفیف برای معرف</span>
+    <span class="val green">۷٪</span>
+  </div>
+  <div class="info-row">
+    <span class="key">🎯 جایزه هر ۱۰ دعوت</span>
+    <span class="val green">۵ گیگ رایگان</span>
+  </div>
+</div>
+
+<!-- ═══════ PAGE: Support ═══════ -->
+<div id="page-support" class="page">
+  <div style="text-align:center;padding:30px 0 20px;">
+    <div style="font-size:56px;margin-bottom:12px;">👨‍💻</div>
+    <div style="font-size:18px;font-weight:700;margin-bottom:6px;">پشتیبانی ۲۴/۷</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:24px;">در هر ساعتی از شبانه‌روز پاسخگوی شما هستیم</div>
+  </div>
+  <button class="btn btn-green" onclick="openSupport()">
+    💬 ارتباط با پشتیبانی
+  </button>
+  <button class="btn btn-outline" onclick="showToast('سوالات رایج در ربات موجود است')">
+    ❓ سوالات متداول
+  </button>
+</div>
+
+<!-- ═══════ Modal: Plan Detail ═══════ -->
+<div class="overlay" id="plan-modal" onclick="closeModal(event)">
+  <div class="modal">
+    <button class="close-btn" onclick="closePlanModal()">✕</button>
+    <div class="modal-title" id="modal-plan-name">۲۰ گیگابایت</div>
+
+    <div class="info-row">
+      <span class="key">💰 قیمت</span>
+      <span class="val green" id="modal-price">300,000 تومان</span>
+    </div>
+    <div class="info-row">
+      <span class="key">👥 تعداد کاربر</span>
+      <span class="val green">نامحدود</span>
+    </div>
+    <div class="info-row">
+      <span class="key">⏳ مدت</span>
+      <span class="val green">نامحدود</span>
+    </div>
+
+    <div class="modal-divider"></div>
+    <div class="section-title">روش پرداخت</div>
+
+    <button class="btn btn-green" onclick="payWallet()">
+      💰 پرداخت از کیف پول
+    </button>
+    <button class="btn btn-outline" onclick="payCard()">
+      💳 کارت به کارت
+    </button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── Telegram WebApp init ──
+  const tg = window.Telegram?.WebApp;
+  if (tg) {
+    tg.ready();
+    tg.expand();
+    // نام کاربر
+    const fn = tg.initDataUnsafe?.user?.first_name;
+    if (fn) document.getElementById('user-name').textContent = fn;
+  }
+
+  const PLANS = {
+    plan_10gb: { name: '۱۰ گیگابایت', price: '150,000' },
+    plan_20gb: { name: '۲۰ گیگابایت', price: '300,000' },
+    plan_30gb: { name: '۳۰ گیگابایت', price: '400,000' },
+    plan_40gb: { name: '۴۰ گیگابایت', price: '520,000' },
+  };
+
+  let currentPlan = null;
+
+  function showTab(tab) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('page-' + tab).classList.add('active');
+    event.currentTarget.classList.add('active');
+  }
+
+  function openPlan(key) {
+    currentPlan = key;
+    const p = PLANS[key];
+    document.getElementById('modal-plan-name').textContent = p.name;
+    document.getElementById('modal-price').textContent = p.price + ' تومان';
+    document.getElementById('plan-modal').classList.add('open');
+  }
+
+  function closePlanModal() {
+    document.getElementById('plan-modal').classList.remove('open');
+  }
+
+  function closeModal(e) {
+    if (e.target === document.getElementById('plan-modal')) closePlanModal();
+  }
+
+  function payWallet() {
+    closePlanModal();
+    if (tg) tg.sendData(JSON.stringify({ action: 'pay_wallet', plan: currentPlan }));
+    showToast('✅ درخواست پرداخت از کیف پول ارسال شد');
+  }
+
+  function payCard() {
+    closePlanModal();
+    if (tg) tg.sendData(JSON.stringify({ action: 'pay_card', plan: currentPlan }));
+    showToast('💳 اطلاعات کارت در ربات ارسال می‌شود');
+  }
+
+  function openSupport() {
+    if (tg) tg.openTelegramLink('https://t.me/AIireza_1383');
+    else window.open('https://t.me/AIireza_1383', '_blank');
+  }
+
+  function copyRef() {
+    const link = document.getElementById('ref-link').textContent;
+    navigator.clipboard?.writeText(link).then(() => showToast('✅ لینک کپی شد!'));
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2800);
+  }
+</script>
+</body>
+</html>
