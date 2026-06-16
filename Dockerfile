@@ -10,4 +10,6 @@ COPY . .
 
 RUN mkdir -p /code/data
 
+EXPOSE 7860
+
 CMD ["python", "main.py"]
