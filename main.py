@@ -7,6 +7,7 @@ import string
 import re
 import time
 import database as db
+import pasarguard_api as pg
 
 # =================== تنظیمات ===================
 BOT_TOKEN = "8773215261:AAF67pQ9AHZrzvMOZlNbsnaG2-uoTo3HHyk"
@@ -16,16 +17,15 @@ GROUP_ID = -1004294169429
 CARD_NUMBER = "5892101542283284"
 CARD_OWNER = "علیرضا وحدانی اصل"
 
-REFERRAL_INVITEE_DISCOUNT = 5   # درصد تخفیف برای دعوت‌شده
-REFERRAL_REFERRER_DISCOUNT = 7  # درصد تخفیف برای معرف
-REFERRAL_REWARD_EVERY = 10      # هر چند نفر جایزه
-REFERRAL_REWARD_GB = 5          # گیگابایت جایزه
+REFERRAL_INVITEE_DISCOUNT = 5
+REFERRAL_REFERRER_DISCOUNT = 7
+REFERRAL_REWARD_EVERY = 10
+REFERRAL_REWARD_GB = 5
 # ================================================
 
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
-# حالت‌های کاربر در حافظه
 user_states = {}
 
 PLANS = {
@@ -45,7 +45,6 @@ def home():
 def run_web():
     app.run(host='0.0.0.0', port=7860)
 
-# ─── منوی اصلی ───
 def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     markup.add(
@@ -65,30 +64,67 @@ def ensure_user(message):
     if not user:
         code = gen_referral_code(uid)
         db.create_user(uid, message.from_user.first_name, message.from_user.username, code)
-        user = db.get_user(uid)
-    return user
+    return db.get_user(uid)
 
 # ══════════════════════════════════════════════
-# دکمه‌های رنگی (Bot API 9.1)
+# دکمه رنگی (Bot API 9.1)
 # ══════════════════════════════════════════════
-
-def green_btn(text, callback_data):
-    """دکمه سبز"""
+def colored_btn(text, callback_data, color="green"):
     btn = types.InlineKeyboardButton(text, callback_data=callback_data)
-    btn.color = "green"
-    return btn
-
-def blue_btn(text, callback_data):
-    """دکمه آبی"""
-    btn = types.InlineKeyboardButton(text, callback_data=callback_data)
-    btn.color = "blue"
+    btn.color = color
     return btn
 
 def back_btn(text="🔙 بازگشت", data="back_main"):
-    """دکمه بازگشت آبی"""
-    btn = types.InlineKeyboardButton(text, callback_data=data)
-    btn.color = "blue"
-    return btn
+    return colored_btn(text, data, "blue")
+
+# ══════════════════════════════════════════════
+# ساخت خودکار کانفیگ از پنل پاسارگاد
+# ══════════════════════════════════════════════
+def auto_create_config(purchase_id: int, user_id: int, config_name: str, plan_key: str):
+    """
+    ساخت خودکار کانفیگ از پنل پاسارگاد و ارسال به کاربر
+    برمی‌گردونه (True, sub_url) یا (False, error_msg)
+    """
+    try:
+        result = pg.create_user(config_name, plan_key, user_id)
+        username = result.get("username", "")
+        sub_url = result.get("subscription_url", "")
+        links = result.get("links", [])
+
+        if not username:
+            return False, "❌ خطا در ساخت کانفیگ: username خالیه"
+
+        # ذخیره در دیتابیس
+        config_text = sub_url or "\n".join(links)
+        db.save_config_to_purchase(purchase_id, config_text)
+
+        # ارسال پیام به کاربر
+        purchase = db.get_purchase_by_id(purchase_id)
+        msg = (
+            "🎉 <b>کانفیگ شما آماده است!</b>\n\n"
+            f"📦 پلن: <b>{purchase['plan_name']}</b>\n"
+            f"🏷️ نام: <b>{config_name}</b>\n\n"
+        )
+        if sub_url:
+            msg += f"🔗 <b>لینک اشتراک:</b>\n<code>{sub_url}</code>\n\n"
+        if links:
+            msg += "📋 <b>لینک‌های مستقیم:</b>\n"
+            for l in links[:3]:  # حداکثر ۳ لینک
+                msg += f"<code>{l}</code>\n"
+
+        msg += (
+            "\n━━━━━━━━━━━━━━━━━━━━\n"
+            "✅ این لینک اشتراک را در اپلیکیشن خود وارد کنید\n"
+            "🔐 <b>سازگار با:</b> V2Ray | V2Box | NPVtunnel | HIDDEFY\n\n"
+            "در صورت مشکل با پشتیبانی تماس بگیرید. 🙏"
+        )
+        bot.send_message(user_id, msg, parse_mode="HTML", reply_markup=main_menu())
+        return True, sub_url
+
+    except Exception as e:
+        err = str(e)
+        print(f"[ERROR create_config] {err}")
+        return False, err
 
 # ══════════════════════════════════════════════
 # /start
@@ -97,19 +133,688 @@ def back_btn(text="🔙 بازگشت", data="back_main"):
 def cmd_start(message):
     if message.chat.type != 'private':
         return
-
     uid = message.from_user.id
     user_states.pop(uid, None)
 
-    # بررسی لینک رفرال
     args = message.text.split()
     referred_by = None
     if len(args) > 1:
-        ref_code = args[1]
-        referrer = db.get_user_by_referral(ref_code)
+        referrer = db.get_user_by_referral(args[1])
         if referrer and referrer['uid'] != uid:
             referred_by = referrer['uid']
 
+    if not db.get_user(uid):
+        code = gen_referral_code(uid)
+        db.create_user(uid, message.from_user.first_name, message.from_user.username, code, referred_by)
+
+    user = db.get_user(uid)
+    ref_link = f"https://t.me/{bot.get_me().username}?start={user['referral_code']}"
+
+    welcome = (
+        f"🎉 <b>سلام {message.from_user.first_name} عزیز، خوش اومدی!</b>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "🌐 <b>VPN حرفه‌ای | سرعت بالا | بدون محدودیت</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        "🔥 <b>پلن‌های نامحدود با قیمت باورنکردنی!</b>\n"
+        "✅ کاربر نامحدود | ✅ مدت نامحدود\n"
+        "✅ سازگار با V2Ray، V2Box، NPVtunnel، HIDDEFY\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "🎁 <b>سیستم تخفیف دوستان</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🔗 لینک دعوت اختصاصی:\n<code>{ref_link}</code>\n\n"
+        f"➡️ دوستت {REFERRAL_INVITEE_DISCOUNT}٪ تخفیف | تو {REFERRAL_REFERRER_DISCOUNT}٪ تخفیف\n"
+        f"🏆 هر {REFERRAL_REWARD_EVERY} دعوت موفق = {REFERRAL_REWARD_GB} گیگ رایگان!\n\n"
+        "👇 از منو زیر شروع کن:"
+    )
+    bot.send_message(message.chat.id, welcome, parse_mode="HTML", reply_markup=main_menu())
+
+# ══════════════════════════════════════════════
+# /stats و /broadcast
+# ══════════════════════════════════════════════
+@bot.message_handler(commands=['stats'])
+def cmd_stats(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    stats = db.get_stats()
+    text = (
+        "📊 <b>آمار ربات</b>\n\n"
+        f"👥 کل کاربران: <b>{stats['total_users']}</b>\n"
+        f"🛒 کل سفارشات: <b>{stats['total_purchases']}</b>\n"
+        f"✅ سفارشات تایید شده: <b>{stats['confirmed_purchases']}</b>\n"
+        f"💳 شارژ کیف پول تایید شده: <b>{stats['confirmed_wallets']}</b>\n"
+        f"💰 درآمد کل: <b>{price_fmt(stats['total_revenue'])}</b>"
+    )
+    bot.send_message(message.chat.id, text, parse_mode="HTML")
+
+@bot.message_handler(commands=['broadcast'])
+def cmd_broadcast(message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    user_states[ADMIN_ID] = {'state': 'waiting_broadcast'}
+    bot.send_message(message.chat.id,
+        "📢 <b>ارسال پیام همگانی</b>\n\nپیام خود را بنویسید:\n(برای لغو: /cancel)",
+        parse_mode="HTML")
+
+@bot.message_handler(commands=['cancel'])
+def cmd_cancel(message):
+    uid = message.from_user.id
+    user_states.pop(uid, None)
+    bot.send_message(message.chat.id, "❌ لغو شد.", reply_markup=main_menu())
+
+# ══════════════════════════════════════════════
+# هندلر اصلی پرایوت
+# ══════════════════════════════════════════════
+@bot.message_handler(
+    func=lambda m: m.chat.type == 'private',
+    content_types=['text', 'photo', 'document', 'sticker', 'voice', 'video', 'audio']
+)
+def handle_private(message):
+    uid = message.from_user.id
+    state = user_states.get(uid, {}).get('state', '')
+    ensure_user(message)
+
+    if message.content_type == 'text':
+        txt = message.text.strip()
+
+        if state == 'waiting_broadcast' and uid == ADMIN_ID:
+            handle_broadcast(message)
+            return
+
+        if txt == "🛒 خرید سرویس":
+            user_states.pop(uid, None)
+            show_plans(message.chat.id, uid)
+            return
+        if txt == "👛 کیف پول":
+            user_states.pop(uid, None)
+            show_wallet(message.chat.id, uid)
+            return
+        if txt == "👤 حساب کاربری":
+            user_states.pop(uid, None)
+            show_account(message.chat.id, uid)
+            return
+        if txt == "👨‍💻 پشتیبانی":
+            mk = types.InlineKeyboardMarkup()
+            mk.add(types.InlineKeyboardButton("💬 ارتباط با پشتیبانی", url=f"https://t.me/{ADMIN_USERNAME}"))
+            bot.send_message(message.chat.id,
+                "👨‍💻 <b>پشتیبانی</b>\n\nبرای سوال یا پیگیری سفارش:",
+                parse_mode="HTML", reply_markup=mk)
+            return
+
+        if state == 'waiting_config_name':
+            handle_config_name(message, uid)
+            return
+        if state == 'waiting_wallet_amount':
+            handle_wallet_amount(message, uid)
+            return
+        if state in ('waiting_receipt', 'waiting_wallet_receipt'):
+            bot.send_message(uid, "❌ لطفاً فقط <b>عکس رسید</b> ارسال کنید.", parse_mode="HTML")
+            return
+
+        bot.send_message(uid, "برای شروع /start بزنید.", reply_markup=main_menu())
+        return
+
+    if message.content_type == 'photo':
+        if state == 'waiting_receipt':
+            handle_purchase_receipt(message, uid)
+        elif state == 'waiting_wallet_receipt':
+            handle_wallet_receipt(message, uid)
+        else:
+            bot.send_message(uid, "❌ ابتدا یک پلن انتخاب کنید.", reply_markup=main_menu())
+
+def handle_broadcast(message):
+    user_states.pop(ADMIN_ID, None)
+    all_users = db.get_all_user_ids()
+    total = len(all_users)
+    success = 0
+    status_msg = bot.send_message(ADMIN_ID, f"⏳ در حال ارسال به {total} کاربر...")
+    for uid in all_users:
+        try:
+            bot.copy_message(uid, message.chat.id, message.message_id)
+            success += 1
+            time.sleep(0.05)
+        except Exception:
+            pass
+    bot.edit_message_text(
+        f"✅ <b>ارسال تمام شد!</b>\n\n"
+        f"👥 کل: {total} | ✅ موفق: {success} | ❌ ناموفق: {total-success}",
+        ADMIN_ID, status_msg.message_id, parse_mode="HTML")
+
+# ══════════════════════════════════════════════
+# خرید کانفیگ
+# ══════════════════════════════════════════════
+def show_plans(chat_id, uid):
+    user = db.get_user(uid)
+    has_referrer = user['referred_by'] is not None
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for i, (key, plan) in enumerate(PLANS.items()):
+        price = plan['price']
+        if has_referrer:
+            disc_price = int(price * (1 - REFERRAL_INVITEE_DISCOUNT / 100))
+            label = f"📦 {plan['name']} ─ {price_fmt(disc_price)} 🎁{REFERRAL_INVITEE_DISCOUNT}٪"
+        else:
+            label = f"📦 {plan['name']} ─ {price_fmt(price)}"
+        markup.add(colored_btn(label, f"plan_{key.split('_',1)[1]}", "green"))
+    markup.add(back_btn("🔙 بازگشت", "back_main"))
+    note = f"\n🎁 <b>شما {REFERRAL_INVITEE_DISCOUNT}٪ تخفیف دارید!</b>" if has_referrer else ""
+    bot.send_message(chat_id,
+        "💎 <b>پلن‌های موجود (نامحدود):</b>\n\n"
+        "✅ کاربر نامحدود | ✅ مدت نامحدود\n"
+        "🚀 V2RAY | V2BOX | NPVtunnel | HIDDEFY\n"
+        f"{note}\n\n👇 پلن مورد نظر را انتخاب کنید:",
+        parse_mode="HTML", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("plan_"))
+def cb_plan(call):
+    uid = call.from_user.id
+    plan_key = "plan_" + call.data[5:]
+    plan = PLANS.get(plan_key)
+    if not plan:
+        bot.answer_callback_query(call.id, "❌ پلن یافت نشد!")
+        return
+    user = db.get_user(uid)
+    discount = REFERRAL_INVITEE_DISCOUNT if user and user['referred_by'] else 0
+    final_price = int(plan['price'] * (1 - discount / 100))
+    user_states[uid] = {
+        'state': 'waiting_config_name',
+        'plan_key': plan_key,
+        'discount': discount,
+        'final_price': final_price,
+    }
+    bot.answer_callback_query(call.id, f"✅ {plan['name']} انتخاب شد")
+    markup = types.InlineKeyboardMarkup()
+    markup.add(back_btn("🔙 بازگشت به پلن‌ها", "back_plans"))
+    bot.edit_message_text(
+        f"✅ پلن <b>{plan['name']}</b> انتخاب شد.\n\n"
+        "📝 یک <b>نام انگلیسی</b> برای کانفیگ وارد کنید:\n"
+        "⚠️ <i>فقط حروف انگلیسی — مثال: Alireza</i>",
+        call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+
+def handle_config_name(message, uid):
+    name = message.text.strip()
+    if not re.match(r'^[a-zA-Z][a-zA-Z0-9 ]*$', name):
+        bot.send_message(uid, "❌ فقط <b>حروف انگلیسی</b>.\nمثال: <code>Alireza</code>\n\nدوباره وارد کنید:",
+            parse_mode="HTML")
+        return
+    st = user_states[uid]
+    st['config_name'] = name
+    plan = PLANS[st['plan_key']]
+    final_price = st['final_price']
+    user = db.get_user(uid)
+    wallet = user['wallet']
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if wallet >= final_price:
+        markup.add(colored_btn(f"💰 پرداخت از کیف پول ({price_fmt(wallet)})", "pay_wallet", "green"))
+    markup.add(colored_btn("💳 پرداخت کارت به کارت", "pay_card", "green"))
+    markup.add(back_btn("🔙 بازگشت", "back_plans"))
+    disc_txt = f"\n🎁 تخفیف دعوت: <b>{st['discount']}٪</b>" if st['discount'] else ""
+    bot.send_message(uid,
+        "╔══════════════════════╗\n 🛒 <b>خلاصه سفارش</b>\n╚══════════════════════╝\n\n"
+        f"📦 پلن: <b>{plan['name']}</b>\n"
+        f"💰 قیمت اصلی: <b>{price_fmt(plan['price'])}</b>{disc_txt}\n"
+        f"✅ مبلغ نهایی: <b>{price_fmt(final_price)}</b>\n"
+        f"🏷️ نام کانفیگ: <code>{name}</code>\n"
+        f"👛 موجودی: <b>{price_fmt(wallet)}</b>\n\n"
+        "👇 روش پرداخت را انتخاب کنید:",
+        parse_mode="HTML", reply_markup=markup)
+    st['state'] = 'choosing_payment'
+
+@bot.callback_query_handler(func=lambda c: c.data == "pay_wallet")
+def cb_pay_wallet(call):
+    uid = call.from_user.id
+    st = user_states.get(uid, {})
+    if not st:
+        bot.answer_callback_query(call.id, "❌ خطا، دوباره شروع کنید.")
+        return
+    plan = PLANS[st['plan_key']]
+    final_price = st['final_price']
+    user = db.get_user(uid)
+    if user['wallet'] < final_price:
+        bot.answer_callback_query(call.id, "❌ موجودی کافی نیست!")
+        return
+    db.deduct_wallet(uid, final_price)
+    uname = f"@{call.from_user.username}" if call.from_user.username else "ندارد"
+    caption = (
+        "💰 <b>خرید از کیف پول!</b>\n\n"
+        f"📦 پلن: <b>{plan['name']} — {price_fmt(final_price)}</b>\n"
+        f"🏷️ نام کانفیگ: <code>{st['config_name']}</code>\n"
+        f"👤 نام: <b>{call.from_user.first_name}</b>\n"
+        f"🆔 یوزرنیم: {uname}\n"
+        f"🔢 آیدی: <code>{uid}</code>\n\n"
+        "⚡ <b>پرداخت تایید شد — در حال ساخت کانفیگ...</b>"
+    )
+    try:
+        sent = bot.send_message(GROUP_ID, caption, parse_mode="HTML")
+        purchase_id = db.save_purchase(
+            uid, st['plan_key'], plan['name'], final_price,
+            st['config_name'], True, st['discount'], sent.message_id
+        )
+        st['state'] = 'done'
+        bot.answer_callback_query(call.id, "✅ پرداخت موفق!")
+        bot.edit_message_text(
+            "✅ <b>پرداخت از کیف پول انجام شد!</b>\n\n⏳ در حال ساخت کانفیگ...",
+            call.message.chat.id, call.message.message_id, parse_mode="HTML")
+
+        # ساخت خودکار کانفیگ
+        ok, result = auto_create_config(purchase_id, uid, st['config_name'], st['plan_key'])
+        if ok:
+            bot.edit_message_text(
+                f"✅ <b>پرداخت و کانفیگ انجام شد!</b>\n\n"
+                f"📦 پلن: {plan['name']}\n🏷️ نام: {st['config_name']}\n\n"
+                "کانفیگ برای کاربر ارسال شد. ✔️",
+                sent.chat.id, sent.message_id, parse_mode="HTML")
+        else:
+            # اگر ساخت ناموفق بود، به ادمین اطلاع بده
+            bot.edit_message_text(
+                f"⚠️ <b>پرداخت موفق اما ساخت کانفیگ خودکار ناموفق!</b>\n\n"
+                f"📦 پلن: {plan['name']}\n🏷️ نام کانفیگ: <code>{st['config_name']}</code>\n"
+                f"🔢 آیدی کاربر: <code>{uid}</code>\n"
+                f"❌ خطا: <code>{result}</code>\n\n"
+                "ادمین باید دستی کانفیگ بسازد.",
+                sent.chat.id, sent.message_id, parse_mode="HTML")
+            bot.send_message(uid,
+                "✅ <b>پرداخت موفق بود!</b>\n\n"
+                "⏳ کانفیگ شما به زودی توسط ادمین ارسال می‌شود.",
+                parse_mode="HTML")
+        check_referral_reward(uid, plan['name'], st['config_name'])
+    except Exception as e:
+        db.add_wallet(uid, final_price)
+        print(f"[ERROR wallet pay] {e}")
+        bot.answer_callback_query(call.id, "❌ خطا رخ داد، دوباره تلاش کنید.")
+
+@bot.callback_query_handler(func=lambda c: c.data == "pay_card")
+def cb_pay_card(call):
+    uid = call.from_user.id
+    st = user_states.get(uid, {})
+    if not st:
+        bot.answer_callback_query(call.id, "❌ خطا، دوباره شروع کنید.")
+        return
+    st['state'] = 'waiting_receipt'
+    bot.answer_callback_query(call.id)
+    markup = types.InlineKeyboardMarkup()
+    markup.add(back_btn("🔙 بازگشت", "back_config_name"))
+    bot.edit_message_text(
+        "╔══════════════════════╗\n 💳 <b>اطلاعات پرداخت</b>\n╚══════════════════════╝\n\n"
+        f"💰 مبلغ: <b>{price_fmt(st['final_price'])}</b>\n\n"
+        f"شماره کارت:\n<code>{CARD_NUMBER}</code>\n"
+        f"👤 به نام: <b>{CARD_OWNER}</b>\n\n"
+        "━━━━━━━━━━━━━━━━━━━━━━\n"
+        "📸 پس از واریز، <b>عکس رسید</b> ارسال کنید:",
+        call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+
+def handle_purchase_receipt(message, uid):
+    st = user_states.get(uid, {})
+    if not st or st.get('state') != 'waiting_receipt':
+        return
+    plan = PLANS[st['plan_key']]
+    user_obj = message.from_user
+    uname = f"@{user_obj.username}" if user_obj.username else "ندارد"
+    caption = (
+        "🚨 <b>سفارش جدید!</b>\n\n"
+        f"📦 پلن: <b>{plan['name']} — {price_fmt(st['final_price'])}</b>\n"
+        f"🏷️ نام کانفیگ: <code>{st['config_name']}</code>\n"
+        f"👤 نام: <b>{user_obj.first_name}</b>\n"
+        f"🆔 یوزرنیم: {uname}\n"
+        f"🔢 آیدی: <code>{uid}</code>\n"
+        f"🎁 تخفیف: {st['discount']}٪"
+    )
+    try:
+        # ارسال عکس رسید به گروه با دکمه‌های تایید/رد
+        sent = bot.send_photo(GROUP_ID, message.photo[-1].file_id, caption=caption, parse_mode="HTML")
+        purchase_id = db.save_purchase(
+            uid, st['plan_key'], plan['name'], st['final_price'],
+            st['config_name'], False, st['discount'], sent.message_id
+        )
+        # اضافه کردن دکمه‌های ✅ و 🟥 زیر پیام رسید
+        action_markup = types.InlineKeyboardMarkup(row_width=2)
+        action_markup.add(
+            colored_btn("✅ تایید — ساخت کانفیگ", f"approve_{purchase_id}", "green"),
+            colored_btn("🟥 رد — عدم تایید", f"reject_{purchase_id}", "red"),
+        )
+        bot.edit_message_reply_markup(GROUP_ID, sent.message_id, reply_markup=action_markup)
+
+        st['state'] = 'done'
+        bot.send_message(uid,
+            "✅ <b>رسید شما ثبت شد!</b>\n\n"
+            "⏳ در حال بررسی توسط ادمین...\n"
+            "پس از تایید، کانفیگ برای شما ارسال می‌شود.\n\n"
+            "🙏 ممنون از خرید شما!",
+            parse_mode="HTML", reply_markup=main_menu())
+    except Exception as e:
+        print(f"[ERROR receipt] {e}")
+        bot.send_message(uid, "⚠️ خطا در ثبت. دوباره رسید را ارسال کنید.")
+
+# ══════════════════════════════════════════════
+# Callback تایید/رد ادمین در گروه
+# ══════════════════════════════════════════════
+@bot.callback_query_handler(func=lambda c: c.data.startswith("approve_") or c.data.startswith("reject_"))
+def cb_admin_decision(call):
+    # فقط ادمین بتونه بزنه
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "❌ فقط ادمین مجاز است!")
+        return
+
+    action, purchase_id_str = call.data.split("_", 1)
+    purchase_id = int(purchase_id_str)
+    purchase = db.get_purchase_by_id(purchase_id)
+
+    if not purchase:
+        bot.answer_callback_query(call.id, "❌ سفارش یافت نشد!")
+        return
+
+    user_id = purchase['uid']
+
+    if action == "reject":
+        # رد کردن
+        bot.answer_callback_query(call.id, "🟥 سفارش رد شد")
+        # ویرایش پیام گروه
+        bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+        bot.send_message(call.message.chat.id,
+            f"🟥 <b>سفارش رد شد</b> توسط ادمین\n"
+            f"🔢 آیدی کاربر: <code>{user_id}</code>\n"
+            f"🏷️ نام: {purchase['config_name']}",
+            parse_mode="HTML")
+        # اطلاع به کاربر
+        try:
+            bot.send_message(user_id,
+                "❌ <b>متأسفانه رسید شما تایید نشد.</b>\n\n"
+                "در صورت اشتباه با پشتیبانی تماس بگیرید.",
+                parse_mode="HTML", reply_markup=main_menu())
+        except Exception:
+            pass
+        return
+
+    # تایید — ساخت خودکار کانفیگ
+    bot.answer_callback_query(call.id, "⏳ در حال ساخت کانفیگ...")
+    bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=None)
+
+    # ارسال پیام انتظار به کاربر
+    try:
+        bot.send_message(user_id,
+            "✅ <b>رسید شما تایید شد!</b>\n\n⏳ در حال ساخت کانفیگ...",
+            parse_mode="HTML")
+    except Exception:
+        pass
+
+    ok, result = auto_create_config(purchase_id, user_id, purchase['config_name'], purchase['plan_key'])
+
+    if ok:
+        # ویرایش پیام گروه
+        bot.send_message(call.message.chat.id,
+            f"✅ <b>کانفیگ ساخته و ارسال شد!</b>\n"
+            f"📦 پلن: {purchase['plan_name']}\n"
+            f"🏷️ نام: {purchase['config_name']}\n"
+            f"👤 کاربر: <code>{user_id}</code>",
+            parse_mode="HTML")
+        check_referral_reward(user_id, purchase['plan_name'], purchase['config_name'])
+    else:
+        # خطا — ادمین باید دستی اقدام کنه
+        markup = types.InlineKeyboardMarkup()
+        markup.add(colored_btn("🔄 تلاش مجدد", f"approve_{purchase_id}", "blue"))
+        bot.send_message(call.message.chat.id,
+            f"⚠️ <b>خطا در ساخت خودکار کانفیگ!</b>\n\n"
+            f"❌ خطا: <code>{result}</code>\n\n"
+            f"🏷️ نام: <code>{purchase['config_name']}</code>\n"
+            f"📦 پلن: {purchase['plan_key']}\n"
+            f"👤 آیدی کاربر: <code>{user_id}</code>\n\n"
+            "می‌توانید مجدداً تلاش کنید یا دستی کانفیگ بسازید.",
+            parse_mode="HTML", reply_markup=markup)
+        try:
+            bot.send_message(user_id,
+                "⏳ <b>در حال آماده‌سازی کانفیگ...</b>\n\nکمی صبر کنید.",
+                parse_mode="HTML")
+        except Exception:
+            pass
+
+# ══════════════════════════════════════════════
+# ریپلای دستی ادمین در گروه (برای ارسال کانفیگ متنی / تایید کیف پول)
+# ══════════════════════════════════════════════
+@bot.message_handler(
+    func=lambda m: m.chat.id == GROUP_ID and m.reply_to_message is not None
+)
+def handle_group_reply(message):
+    replied_id = message.reply_to_message.message_id
+
+    # شارژ کیف پول
+    req = db.get_wallet_request_by_group_msg(replied_id)
+    if req:
+        txt = message.text.strip() if message.text else ""
+        clean = txt.replace(",", "").replace("،", "")
+        if not clean.isdigit():
+            bot.reply_to(message, "❌ لطفاً دقیقاً عدد مبلغ را ریپلای کنید.")
+            return
+        confirmed_amount = int(clean)
+        db.add_wallet(req['uid'], confirmed_amount)
+        db.confirm_wallet_request(req['id'])
+        try:
+            bot.send_message(req['uid'],
+                f"✅ <b>کیف پول شارژ شد!</b>\n\n"
+                f"💰 مبلغ: <b>{price_fmt(confirmed_amount)}</b>\n"
+                f"👛 موجودی جدید: <b>{price_fmt(db.get_user(req['uid'])['wallet'])}</b>",
+                parse_mode="HTML", reply_markup=main_menu())
+            bot.reply_to(message, f"✅ کیف پول <code>{req['uid']}</code> شارژ شد.", parse_mode="HTML")
+        except Exception as e:
+            bot.reply_to(message, f"❌ خطا: <code>{e}</code>", parse_mode="HTML")
+        return
+
+    # ارسال دستی کانفیگ (در صورتی که ادمین بخواد متنی ریپلای کنه)
+    purchase = db.get_purchase_by_group_msg(replied_id)
+    if purchase:
+        user_id = purchase['uid']
+        intro = "✅ <b>کانفیگ شما:</b>\n\n"
+        try:
+            ct = message.content_type
+            if ct == 'text':
+                db.save_config_to_purchase(purchase['id'], message.text)
+                bot.send_message(user_id, intro + message.text, parse_mode="HTML")
+            elif ct == 'photo':
+                if message.caption:
+                    db.save_config_to_purchase(purchase['id'], message.caption)
+                bot.send_photo(user_id, message.photo[-1].file_id,
+                    caption=intro + (message.caption or ""), parse_mode="HTML")
+            elif ct == 'document':
+                if message.caption:
+                    db.save_config_to_purchase(purchase['id'], message.caption)
+                bot.send_document(user_id, message.document.file_id,
+                    caption=intro + (message.caption or ""), parse_mode="HTML")
+            else:
+                bot.copy_message(user_id, GROUP_ID, message.message_id)
+            bot.reply_to(message, f"✅ کانفیگ به <code>{user_id}</code> ارسال شد.", parse_mode="HTML")
+        except Exception as e:
+            bot.reply_to(message, f"❌ خطا: <code>{e}</code>", parse_mode="HTML")
+
+# ══════════════════════════════════════════════
+# کیف پول
+# ══════════════════════════════════════════════
+def show_wallet(chat_id, uid):
+    user = db.get_user(uid)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        colored_btn("💰 موجودی", "wallet_balance", "green"),
+        colored_btn("➕ شارژ", "wallet_charge", "green"),
+    )
+    markup.add(back_btn())
+    bot.send_message(chat_id,
+        f"👛 <b>کیف پول</b>\n\n💰 موجودی: <b>{price_fmt(user['wallet'])}</b>",
+        parse_mode="HTML", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda c: c.data == "wallet_balance")
+def cb_wallet_balance(call):
+    user = db.get_user(call.from_user.id)
+    markup = types.InlineKeyboardMarkup()
+    markup.add(colored_btn("➕ شارژ کیف پول", "wallet_charge", "green"))
+    markup.add(back_btn("🔙 بازگشت", "back_wallet"))
+    bot.edit_message_text(f"💰 <b>موجودی:</b> <b>{price_fmt(user['wallet'])}</b>",
+        call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda c: c.data == "wallet_charge")
+def cb_wallet_charge(call):
+    uid = call.from_user.id
+    user_states[uid] = {'state': 'waiting_wallet_amount'}
+    markup = types.InlineKeyboardMarkup()
+    markup.add(back_btn("🔙 بازگشت", "back_wallet"))
+    bot.edit_message_text(
+        "➕ <b>شارژ کیف پول</b>\n\n💬 مبلغ (تومان) را وارد کنید:\nمثال: <code>100000</code>",
+        call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+
+def handle_wallet_amount(message, uid):
+    txt = message.text.strip().replace(",", "").replace("،", "")
+    if not txt.isdigit() or int(txt) < 10000:
+        bot.send_message(uid, "❌ حداقل <b>۱۰,۰۰۰ تومان</b>:", parse_mode="HTML")
+        return
+    amount = int(txt)
+    user_states[uid]['amount'] = amount
+    user_states[uid]['state'] = 'waiting_wallet_receipt'
+    markup = types.InlineKeyboardMarkup()
+    markup.add(back_btn("🔙 بازگشت", "back_wallet"))
+    bot.send_message(uid,
+        f"💰 مبلغ شارژ: <b>{price_fmt(amount)}</b>\n\n"
+        f"شماره کارت:\n<code>{CARD_NUMBER}</code>\n👤 به نام: <b>{CARD_OWNER}</b>\n\n"
+        "📸 پس از واریز عکس رسید ارسال کنید:",
+        parse_mode="HTML", reply_markup=markup)
+
+def handle_wallet_receipt(message, uid):
+    st = user_states.get(uid, {})
+    if not st or st.get('state') != 'waiting_wallet_receipt':
+        return
+    amount = st['amount']
+    user_obj = message.from_user
+    uname = f"@{user_obj.username}" if user_obj.username else "ندارد"
+    caption = (
+        "💳 <b>درخواست شارژ کیف پول</b>\n\n"
+        f"👤 نام: <b>{user_obj.first_name}</b>\n"
+        f"🆔 یوزرنیم: {uname}\n"
+        f"🔢 آیدی: <code>{uid}</code>\n"
+        f"💰 مبلغ: <b>{price_fmt(amount)}</b>\n\n"
+        f"✅ برای تایید، عدد <code>{amount}</code> را ریپلای کنید."
+    )
+    try:
+        sent = bot.send_photo(GROUP_ID, message.photo[-1].file_id, caption=caption, parse_mode="HTML")
+        req_id = db.save_wallet_request(uid, amount)
+        db.set_wallet_request_msg(req_id, sent.message_id)
+        st['state'] = 'done'
+        bot.send_message(uid,
+            "✅ <b>رسید شارژ ثبت شد!</b>\n\n⏳ بررسی توسط ادمین...",
+            parse_mode="HTML", reply_markup=main_menu())
+    except Exception as e:
+        print(f"[ERROR wallet receipt] {e}")
+        bot.send_message(uid, "⚠️ خطا. دوباره ارسال کنید.")
+
+# ══════════════════════════════════════════════
+# حساب کاربری
+# ══════════════════════════════════════════════
+def show_account(chat_id, uid):
+    user = db.get_user(uid)
+    purchases = db.get_purchases_by_user(uid)
+    ref_link = f"https://t.me/{bot.get_me().username}?start={user['referral_code']}"
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    for p in purchases:
+        markup.add(colored_btn(f"📦 {p['config_name']} — {p['plan_name']}", f"reconfig_{p['id']}", "green"))
+    markup.add(back_btn())
+    bot.send_message(chat_id,
+        "👤 <b>حساب کاربری</b>\n\n"
+        f"👥 دعوت موفق: <b>{user['referral_count']}</b>\n"
+        f"🛒 خریدها: <b>{len(purchases)}</b>\n"
+        f"👛 موجودی: <b>{price_fmt(user['wallet'])}</b>\n\n"
+        f"🔗 لینک دعوت:\n<code>{ref_link}</code>\n\n"
+        "📋 <b>کانفیگ‌ها</b> (برای ارسال مجدد کلیک کنید):",
+        parse_mode="HTML", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("reconfig_"))
+def cb_reconfig(call):
+    purchase_id = int(call.data.split("_")[1])
+    purchase = db.get_purchase_by_id(purchase_id)
+    uid = call.from_user.id
+    if not purchase or purchase['uid'] != uid:
+        bot.answer_callback_query(call.id, "❌ یافت نشد!")
+        return
+    if not purchase['config_data']:
+        bot.answer_callback_query(call.id, "⏳ هنوز آماده نشده!")
+        return
+    bot.answer_callback_query(call.id, "✅ ارسال شد")
+    bot.send_message(uid,
+        f"✅ <b>کانفیگ:</b>\n\n📦 {purchase['plan_name']}\n🏷️ {purchase['config_name']}\n\n"
+        f"<code>{purchase['config_data']}</code>",
+        parse_mode="HTML")
+
+# ══════════════════════════════════════════════
+# دکمه‌های بازگشت
+# ══════════════════════════════════════════════
+@bot.callback_query_handler(func=lambda c: c.data.startswith("back_"))
+def cb_back(call):
+    uid = call.from_user.id
+    dest = call.data[5:]
+    if dest == "main":
+        user_states.pop(uid, None)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        bot.send_message(call.message.chat.id, "🏠 منوی اصلی:", reply_markup=main_menu())
+    elif dest == "plans":
+        user_states.pop(uid, None)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        show_plans(call.message.chat.id, uid)
+    elif dest == "wallet":
+        user_states.pop(uid, None)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+        show_wallet(call.message.chat.id, uid)
+    elif dest == "config_name":
+        st = user_states.get(uid, {})
+        if st.get('plan_key'):
+            plan = PLANS[st['plan_key']]
+            st['state'] = 'waiting_config_name'
+            markup = types.InlineKeyboardMarkup()
+            markup.add(back_btn("🔙 بازگشت به پلن‌ها", "back_plans"))
+            bot.edit_message_text(
+                f"✅ پلن <b>{plan['name']}</b>\n\n"
+                "📝 نام انگلیسی کانفیگ:\n⚠️ <i>فقط حروف انگلیسی</i>",
+                call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
+        else:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+            show_plans(call.message.chat.id, uid)
+    bot.answer_callback_query(call.id)
+
+# ══════════════════════════════════════════════
+# رفرال
+# ══════════════════════════════════════════════
+def check_referral_reward(buyer_uid, plan_name, config_name):
+    user = db.get_user(buyer_uid)
+    if not user or not user['referred_by']:
+        return
+    referrer_uid = user['referred_by']
+    result = db.increment_referral_count(referrer_uid)
+    if not result:
+        return
+    referral_count = result['referral_count']
+    rewarded_sets = result['rewarded_sets']
+    try:
+        bot.send_message(referrer_uid,
+            f"🎉 <b>یک نفر با لینک شما خرید کرد!</b>\n\n"
+            f"👥 تعداد دعوت موفق: <b>{referral_count}</b>\n"
+            f"🎁 {REFERRAL_REWARD_EVERY - (referral_count % REFERRAL_REWARD_EVERY)} نفر دیگر تا جایزه!",
+            parse_mode="HTML")
+    except Exception:
+        pass
+    if referral_count > 0 and referral_count % REFERRAL_REWARD_EVERY == 0:
+        if referral_count // REFERRAL_REWARD_EVERY > rewarded_sets:
+            db.mark_rewarded_set(referrer_uid)
+            referrer = db.get_user(referrer_uid)
+            uname = f"@{referrer['username']}" if referrer and referrer['username'] else f"ID:{referrer_uid}"
+            try:
+                bot.send_message(GROUP_ID,
+                    f"🏆 <b>جایزه رفرال!</b>\n\n👤 {uname}\n🔢 <code>{referrer_uid}</code>\n"
+                    f"👥 {referral_count} دعوت\n🎁 <b>{REFERRAL_REWARD_GB} گیگ رایگان</b>",
+                    parse_mode="HTML")
+                bot.send_message(referrer_uid,
+                    f"🏆 <b>تبریک! {REFERRAL_REWARD_GB} گیگ رایگان!</b>\n\n"
+                    "ادمین به زودی ارسال می‌کند. 🙏", parse_mode="HTML")
+            except Exception:
+                pass
+
+# ─── اجرا ───
+if __name__ == "__main__":
+    db.init_db()
+    web_thread = Thread(target=run_web, daemon=True)
+    web_thread.start()
+    print("🤖 Bot started...")
+    bot.infinity_polling()
     existing = db.get_user(uid)
     if not existing:
         code = gen_referral_code(uid)
