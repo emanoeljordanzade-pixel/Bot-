@@ -224,3 +224,117 @@ def get_purchase_by_group_msg(replied_id):
         return dict(row) if row else None
     finally:
         conn.close()
+    finally:
+        conn.close()
+
+# ══════════════════════════════════════════════
+# بخش مدیریت کیف پول
+# ══════════════════════════════════════════════
+
+def deduct_wallet(uid, final_price):
+    conn = get_db_connection()
+    try:
+        conn.execute('UPDATE users SET wallet = wallet - ? WHERE uid = ?', (final_price, uid))
+        conn.commit()
+    finally:
+        conn.close()
+
+def add_wallet(uid, confirmed_amount):
+    conn = get_db_connection()
+    try:
+        conn.execute('UPDATE users SET wallet = wallet + ? WHERE uid = ?', (confirmed_amount, uid))
+        conn.commit()
+    finally:
+        conn.close()
+
+def save_wallet_request(uid, amount):
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute('''
+            INSERT INTO wallet_requests (uid, amount)
+            VALUES (?, ?)
+        ''', (uid, amount))
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
+def set_wallet_request_msg(req_id, msg_id):
+    conn = get_db_connection()
+    try:
+        conn.execute('UPDATE wallet_requests SET group_msg_id = ? WHERE id = ?', (msg_id, req_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_wallet_request_by_group_msg(replied_id):
+    conn = get_db_connection()
+    try:
+        row = conn.execute('SELECT * FROM wallet_requests WHERE group_msg_id = ? AND status = "pending"', (replied_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+def confirm_wallet_request(req_id):
+    conn = get_db_connection()
+    try:
+        conn.execute('UPDATE wallet_requests SET status = "confirmed" WHERE id = ?', (req_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+# ══════════════════════════════════════════════
+# بخش مدیریت خریدها و کانفیگ‌ها
+# ══════════════════════════════════════════════
+
+def save_purchase(uid, plan_key, plan_name, final_price, config_name, wallet_paid, discount, group_msg_id):
+    conn = get_db_connection()
+    try:
+        cursor = conn.execute('''
+            INSERT INTO purchases (uid, plan_key, plan_name, price, config_name, wallet_paid, discount, group_msg_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (uid, plan_key, plan_name, final_price, config_name, 1 if wallet_paid else 0, discount, group_msg_id))
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
+def set_purchase_group_msg(purchase_id, msg_id):
+    conn = get_db_connection()
+    try:
+        conn.execute('UPDATE purchases SET group_msg_id = ? WHERE id = ?', (msg_id, purchase_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def save_config_to_purchase(purchase_id, config_link):
+    conn = get_db_connection()
+    try:
+        conn.execute('UPDATE purchases SET config_data = ? WHERE id = ?', (config_link, purchase_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_purchases_by_user(uid):
+    conn = get_db_connection()
+    try:
+        rows = conn.execute('SELECT * FROM purchases WHERE uid = ?', (uid,)).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+def get_purchase_by_id(purchase_id):
+    conn = get_db_connection()
+    try:
+        row = conn.execute('SELECT * FROM purchases WHERE id = ?', (purchase_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+def get_purchase_by_group_msg(replied_id):
+    conn = get_db_connection()
+    try:
+        row = conn.execute('SELECT * FROM purchases WHERE group_msg_id = ?', (replied_id,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
