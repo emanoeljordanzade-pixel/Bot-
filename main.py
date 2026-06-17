@@ -20,6 +20,12 @@ REFERRAL_REFERRER_DISCOUNT = 7
 REFERRAL_REWARD_EVERY = 10
 REFERRAL_REWARD_GB = 5
 
+# =================== پاسارگاد ===================
+PASARGUARD_URL = "https://panel.foodchains.com.tr"
+PASARGUARD_USER = "moein"
+PASARGUARD_PASS = "P6blW82Wv161!"
+# ================================================
+
 bot = telebot.TeleBot(BOT_TOKEN)
 app = Flask(__name__)
 
@@ -43,6 +49,98 @@ def home():
 
 def run_web():
     app.run(host='0.0.0.0', port=7860)
+
+
+# ══════════════════════════════════════════════
+# API پاسارگاد
+# ══════════════════════════════════════════════
+_pg_token = None
+
+def pg_login():
+    """لاگین به پاسارگاد و گرفتن توکن"""
+    global _pg_token
+    try:
+        resp = requests.post(
+            f"{PASARGUARD_URL}/api/admin/token",
+            data={"username": PASARGUARD_USER, "password": PASARGUARD_PASS},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            _pg_token = resp.json().get("access_token")
+            return _pg_token
+    except Exception as e:
+        print(f"[PG Login Error] {e}")
+    return None
+
+def pg_headers():
+    """هدر با توکن"""
+    if not _pg_token:
+        pg_login()
+    return {"Authorization": f"Bearer {_pg_token}"}
+
+def pg_create_user(username, data_limit_gb):
+    """ساخت کاربر جدید در پاسارگاد"""
+    if not _pg_token:
+        pg_login()
+
+    data_limit_bytes = data_limit_gb * 1024 * 1024 * 1024
+
+    payload = {
+        "username": username,
+        "proxies": {},
+        "inbounds": {},
+        "expire": None,
+        "data_limit": data_limit_bytes,
+        "data_limit_reset_strategy": "no_reset",
+        "status": "active",
+        "note": f"Created by bot - {data_limit_gb}GB plan"
+    }
+
+    try:
+        resp = requests.post(
+            f"{PASARGUARD_URL}/api/user",
+            json=payload,
+            headers=pg_headers(),
+            timeout=10
+        )
+
+        if resp.status_code == 401:
+            pg_login()
+            resp = requests.post(
+                f"{PASARGUARD_URL}/api/user",
+                json=payload,
+                headers=pg_headers(),
+                timeout=10
+            )
+
+        if resp.status_code in (200, 201):
+            return resp.json()
+        else:
+            print(f"[PG Create User Error] {resp.status_code}: {resp.text}")
+            return None
+    except Exception as e:
+        print(f"[PG Create User Exception] {e}")
+        return None
+
+def pg_get_subscription_link(username):
+    """گرفتن لینک سابسکریپشن کاربر"""
+    try:
+        resp = requests.get(
+            f"{PASARGUARD_URL}/api/user/{username}",
+            headers=pg_headers(),
+            timeout=10
+        )
+        if resp.status_code == 200:
+            user_data = resp.json()
+            sub_url = user_data.get("subscription_url")
+            if sub_url:
+                if sub_url.startswith("/"):
+                    sub_url = PASARGUARD_URL + sub_url
+                return sub_url
+    except Exception as e:
+        print(f"[PG Get Sub Error] {e}")
+    return None
+
 
 # ══════════════════════════════════════════════
 # ارسال پیام با دکمه‌های رنگی
@@ -84,6 +182,7 @@ def url_btn(text, url):
 def inline_kb(*rows):
     return {"inline_keyboard": list(rows)}
 
+
 # ─── منوی اصلی ───
 def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -106,6 +205,7 @@ def ensure_user(message):
         db.create_user(uid, message.from_user.first_name, message.from_user.username, code)
         user = db.get_user(uid)
     return user
+
 
 # ══════════════════════════════════════════════
 # /start
@@ -152,6 +252,7 @@ def cmd_start(message):
         "👇 از منو زیر شروع کن:"
     )
     bot.send_message(message.chat.id, welcome, parse_mode="HTML", reply_markup=main_menu())
+
 
 # ══════════════════════════════════════════════
 # هندلر پیام‌های پرایوت
@@ -216,8 +317,9 @@ def handle_private(message):
     if state in ('waiting_receipt', 'waiting_wallet_receipt'):
         bot.send_message(uid, "❌ لطفاً فقط <b>عکس رسید</b> پرداخت را ارسال کنید.", parse_mode="HTML")
 
+
 # ══════════════════════════════════════════════
-# خرید سرویس و پلن‌ها
+# خرید سرویس
 # ══════════════════════════════════════════════
 def show_plans(chat_id, uid):
     user = db.get_user(uid)
@@ -245,6 +347,7 @@ def show_plans(chat_id, uid):
         "👇 پلن مورد نظر خود را انتخاب کنید:",
         {"inline_keyboard": rows}
     )
+
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("plan_"))
 def cb_plan(call):
@@ -275,6 +378,7 @@ def cb_plan(call):
         kb
     )
 
+
 def handle_config_name(message, uid):
     name = message.text.strip()
     if not re.match(r'^[a-zA-Z][a-zA-Z0-9_-]*$', name):
@@ -292,13 +396,13 @@ def handle_config_name(message, uid):
     wallet = user['wallet']
 
     rows = []
-    # دکمه کیف پول همیشه نمایش داده می‌شود
-    wallet_label = f"💰 پرداخت از کیف پول (موجودی: {price_fmt(wallet)})"
-    if wallet < final_price:
-        wallet_label += f" ❌ کمبود {price_fmt(final_price - wallet)}"
-    rows.append([green_btn(wallet_label, "pay_wallet")])
-    
-    # دکمه کارت به کارت
+    if wallet > 0:
+        wallet_label = f"💰 کیف پول ({price_fmt(wallet)})"
+        if wallet >= final_price:
+            wallet_label += " ✅"
+        else:
+            wallet_label += f" — کمبود {price_fmt(final_price - wallet)}"
+        rows.append([green_btn(wallet_label, "pay_wallet")])
     rows.append([green_btn("💳 پرداخت کارت به کارت", "pay_card")])
     rows.append([red_btn("🔙 بازگشت", "back_plans")])
 
@@ -317,9 +421,7 @@ def handle_config_name(message, uid):
     )
     st['state'] = 'choosing_payment'
 
-# ══════════════════════════════════════════════
-# روش پرداخت ۱: کیف پول (دستی)
-# ══════════════════════════════════════════════
+
 @bot.callback_query_handler(func=lambda c: c.data == "pay_wallet")
 def cb_pay_wallet(call):
     uid = call.from_user.id
@@ -333,55 +435,83 @@ def cb_pay_wallet(call):
     user = db.get_user(uid)
 
     if user['wallet'] < final_price:
-        bot.answer_callback_query(call.id, "❌ موجودی کیف پول شما کافی نیست! لطفاً آن را شارژ کنید.", show_alert=True)
+        bot.answer_callback_query(call.id, "❌ موجودی کافی نیست! لطفاً کیف پول را شارژ کنید.")
         return
 
-    # کسر از کیف پول کاربر
     db.deduct_wallet(uid, final_price)
-    bot.answer_callback_query(call.id, "✅ پرداخت موفق! در حال ثبت سفارش...")
-
-    config_name = st['config_name']
-    user_obj = call.from_user
-    uname = f"@{user_obj.username}" if user_obj.username else "ندارد"
-
-    # ذخیره خرید در دیتابیس (wallet_paid = True)
-    purchase_id = db.save_purchase(
-        uid, st['plan_key'], plan['name'], final_price,
-        config_name, True, st['discount'], None
-    )
-
-    # اطلاع به گروه ادمین جهت ارسال دستی کانفیگ
-    try:
-        sent = bot.send_message(GROUP_ID,
-            "💰 <b>خرید از کیف پول — ارسال کانفیگ دستی</b>\n\n"
-            f"👤 {user_obj.first_name} | {uname}\n"
-            f"🔢 آیدی: <code>{uid}</code>\n"
-            f"📦 پلن: <b>{plan['name']}</b> — {price_fmt(final_price)}\n"
-            f"🏷️ نام کانفیگ: <code>{config_name}</code>\n"
-            f"🎁 تخفیف: {st['discount']}٪\n"
-            f"💰 پرداخت: <b>کیف پول ✅</b>\n\n"
-            f"📌 <b>لینک کانفیگ را روی همین پیام ریپلای کنید تا خودکار برای کاربر ارسال شود.</b>",
-            parse_mode="HTML"
-        )
-        db.set_purchase_group_msg(purchase_id, sent.message_id)
-        group_msg_to_purchase[sent.message_id] = purchase_id
-    except Exception as e:
-        print(f"[ERROR wallet group notify] {e}")
-
-    st['state'] = 'done'
+    bot.answer_callback_query(call.id, "✅ پرداخت موفق! در حال ساخت کانفیگ...")
 
     edit_colored_message(call.message.chat.id, call.message.message_id,
-        "✅ <b>پرداخت با موفقیت از کیف پول کسر شد!</b>\n\n"
-        f"💰 مبلغ کسر شده: <b>{price_fmt(final_price)}</b>\n"
-        f"👛 موجودی باقی‌مانده: <b>{price_fmt(db.get_user(uid)['wallet'])}</b>\n\n"
-        "⏳ ادمین به زودی کانفیگ شما را بررسی و ارسال می‌کند.\n"
-        "🙏 ممنون از خرید شما!",
+        "✅ <b>پرداخت موفق!</b>\n\n⏳ در حال ساخت کانفیگ اتوماتیک...",
         inline_kb()
     )
 
-# ══════════════════════════════════════════════
-# روش پرداخت ۲: کارت به کارت (دستی)
-# ══════════════════════════════════════════════
+    # ساخت اتوماتیک کانفیگ
+    _create_and_send_config(uid, call.from_user.first_name, call.from_user.username,
+                            st, plan, final_price, wallet_paid=True)
+
+
+def _create_and_send_config(uid, first_name, username, st, plan, final_price, wallet_paid=False):
+    """ساخت کانفیگ در پاسارگاد و ارسال به کاربر"""
+    config_name = st['config_name']
+    pg_username = f"{config_name}_{uid}"
+
+    pg_user = pg_create_user(pg_username, plan['gb'])
+
+    if pg_user:
+        sub_link = pg_get_subscription_link(pg_username)
+        if sub_link:
+            purchase_id = db.save_purchase(
+                uid, st['plan_key'], plan['name'], final_price,
+                config_name, wallet_paid, st['discount'], None
+            )
+            db.save_config_to_purchase(purchase_id, sub_link)
+            st['state'] = 'done'
+
+            bot.send_message(uid,
+                "🎉 <b>کانفیگ شما آماده است!</b>\n\n"
+                f"📦 پلن: <b>{plan['name']}</b>\n"
+                f"🏷️ نام: <code>{config_name}</code>\n\n"
+                "🔗 <b>لینک سابسکریپشن:</b>\n"
+                f"<code>{sub_link}</code>\n\n"
+                "✅ این لینک را در V2Ray / V2Box / NPVtunnel وارد کنید.\n"
+                "🙏 ممنون از خرید شما!",
+                parse_mode="HTML", reply_markup=main_menu()
+            )
+
+            uname = f"@{username}" if username else f"آیدی: {uid}"
+            bot.send_message(GROUP_ID,
+                f"✅ <b>خرید اتوماتیک انجام شد!</b>\n\n"
+                f"👤 {first_name} | {uname}\n"
+                f"🔢 آیدی: <code>{uid}</code>\n"
+                f"📦 پلن: {plan['name']} — {price_fmt(final_price)}\n"
+                f"🏷️ نام: <code>{config_name}</code>\n"
+                f"💰 روش: {'کیف پول' if wallet_paid else 'کارت به کارت'}\n\n"
+                f"🔗 لینک: <code>{sub_link}</code>",
+                parse_mode="HTML"
+            )
+            check_referral_reward(uid, plan['name'], config_name)
+            return
+
+    st['state'] = 'done'
+    uname = f"@{username}" if username else "ندارد"
+    bot.send_message(uid,
+        "✅ <b>پرداخت ثبت شد!</b>\n\n"
+        "⏳ کانفیگ به زودی توسط ادمین ارسال می‌شود.\n"
+        "🙏 ممنون از خرید شما!",
+        parse_mode="HTML", reply_markup=main_menu()
+    )
+    bot.send_message(GROUP_ID,
+        f"⚠️ <b>خرید ثبت شد ولی API پاسارگاد خطا داد!</b>\n\n"
+        f"👤 {first_name} | {uname}\n"
+        f"🔢 آیدی: <code>{uid}</code>\n"
+        f"📦 پلن: {plan['name']} — {price_fmt(final_price)}\n"
+        f"🏷️ نام: <code>{config_name}</code>\n\n"
+        "لطفاً دستی کانفیگ بسازید و ریپلای کنید.",
+        parse_mode="HTML"
+    )
+
+
 @bot.callback_query_handler(func=lambda c: c.data == "pay_card")
 def cb_pay_card(call):
     uid = call.from_user.id
@@ -406,6 +536,7 @@ def cb_pay_card(call):
         kb
     )
 
+
 def handle_purchase_receipt(message, uid):
     st = user_states.get(uid, {})
     if not st or st.get('state') != 'waiting_receipt':
@@ -417,15 +548,14 @@ def handle_purchase_receipt(message, uid):
     uname = f"@{user_obj.username}" if user_obj.username else "ندارد"
 
     caption = (
-        "🚨 <b>سفارش جدید (کارت به کارت) — ارسال کانفیگ دستی</b>\n\n"
+        "🚨 <b>سفارش جدید — تایید کنید!</b>\n\n"
         f"📦 پلن: <b>{plan['name']} — {price_fmt(st['final_price'])}</b>\n"
         f"🏷️ نام کانفیگ: <code>{config_name}</code>\n"
         f"👤 نام: <b>{user_obj.first_name}</b>\n"
         f"🆔 یوزرنیم: {uname}\n"
         f"🔢 آیدی: <code>{uid}</code>\n"
-        f"🎁 تخفیف: {st['discount']}٪\n"
-        f"💳 پرداخت: کارت به کارت\n\n"
-        "📌 <b>لینک کانفیگ را روی همین رسید ریپلای کنید تا خودکار به کاربر ارسال شود.</b>"
+        f"🎁 تخفیف: {st['discount']}٪\n\n"
+        "✅ برای تایید و ساخت <b>اتوماتیک</b> کانفیگ، ریپلای کنید: <code>ok</code>"
     )
 
     try:
@@ -434,33 +564,26 @@ def handle_purchase_receipt(message, uid):
             uid, st['plan_key'], plan['name'], st['final_price'],
             config_name, False, st['discount'], sent.message_id
         )
-        group_msg_to_purchase[sent.message_id] = purchase_id
+        group_msg_to_purchase[sent.message_id] = {
+            'purchase_id': purchase_id,
+            'uid': uid,
+            'first_name': user_obj.first_name,
+            'username': user_obj.username,
+            'st': dict(st),
+            'plan': plan,
+            'final_price': st['final_price']
+        }
         st['state'] = 'done'
         bot.send_message(uid,
             "✅ <b>رسید شما با موفقیت ثبت شد!</b>\n\n"
-            "⏳ ادمین کانفیگ شما را به زودی ارسال می‌کند.\n\n"
+            "⏳ در حال بررسی توسط ادمین...\n"
+            "پس از تایید، کانفیگ <b>اتوماتیک</b> ارسال می‌شود.\n\n"
             "🙏 ممنون از خرید شما!",
             parse_mode="HTML", reply_markup=main_menu())
     except Exception as e:
         print(f"[ERROR receipt] {e}")
         bot.send_message(uid, "⚠️ خطا در ثبت سفارش. لطفاً دوباره رسید را ارسال کنید.")
 
-# ── ارسال نهایی کانفیگ به پیوی کاربر ──
-def _send_config_to_user(uid, purchase_id, config_link, plan_name, config_name, final_price, wallet_paid):
-    db.save_config_to_purchase(purchase_id, config_link)
-
-    bot.send_message(uid,
-        "🎉 <b>کانفیگ شما آماده است!</b>\n\n"
-        f"📦 پلن: <b>{plan_name}</b>\n"
-        f"🏷️ نام: <code>{config_name}</code>\n"
-        f"💰 مبلغ: <b>{price_fmt(final_price)}</b>\n"
-        f"روش پرداخت: {'💰 کیف پول' if wallet_paid else '💳 کارت به کارت'}\n\n"
-        "🔗 <b>لینک سابسکریپشن:</b>\n"
-        f"<code>{config_link}</code>\n\n"
-        "✅ این لینک را در نرم‌افزارهای V2Ray وارد کنید.\n"
-        "🙏 ممنون از خرید شما!",
-        parse_mode="HTML", reply_markup=main_menu()
-    )
 
 def check_referral_reward(buyer_uid, plan_name, config_name):
     user = db.get_user(buyer_uid)
@@ -507,8 +630,9 @@ def check_referral_reward(buyer_uid, plan_name, config_name):
             except:
                 pass
 
+
 # ══════════════════════════════════════════════
-# بخش مدیریت کیف پول کاربران
+# کیف پول
 # ══════════════════════════════════════════════
 def show_wallet(chat_id, uid):
     user = db.get_user(uid)
@@ -519,6 +643,7 @@ def show_wallet(chat_id, uid):
     send_colored_message(chat_id,
         f"👛 <b>کیف پول شما</b>\n\n💰 موجودی: <b>{price_fmt(user['wallet'])}</b>\n\nیک گزینه را انتخاب کنید:",
         kb)
+
 
 @bot.callback_query_handler(func=lambda c: c.data == "wallet_balance")
 def cb_wallet_balance(call):
@@ -531,6 +656,7 @@ def cb_wallet_balance(call):
     edit_colored_message(call.message.chat.id, call.message.message_id,
         f"💰 <b>موجودی کیف پول:</b>\n\n<b>{price_fmt(user['wallet'])}</b>", kb)
 
+
 @bot.callback_query_handler(func=lambda c: c.data == "wallet_charge")
 def cb_wallet_charge(call):
     uid = call.from_user.id
@@ -539,6 +665,7 @@ def cb_wallet_charge(call):
     edit_colored_message(call.message.chat.id, call.message.message_id,
         "➕ <b>شارژ کیف پول</b>\n\n"
         "💬 مبلغ شارژ را <b>به تومان</b> وارد کن:\nمثال: <code>100000</code>", kb)
+
 
 def handle_wallet_amount(message, uid):
     txt = message.text.strip().replace(",", "").replace("،", "")
@@ -558,6 +685,7 @@ def handle_wallet_amount(message, uid):
         f"👤 به نام: <b>{CARD_OWNER}</b>\n\n"
         "📸 پس از واریز، <b>عکس رسید</b> را ارسال کنید:", kb)
 
+
 def handle_wallet_receipt(message, uid):
     st = user_states.get(uid, {})
     if not st or st.get('state') != 'waiting_wallet_receipt':
@@ -572,7 +700,7 @@ def handle_wallet_receipt(message, uid):
         f"👤 {user_obj.first_name} | {uname}\n"
         f"🔢 آیدی: <code>{uid}</code>\n"
         f"💰 مبلغ: <b>{price_fmt(amount)}</b>\n\n"
-        f"✅ برای تایید، عدد نهایی مبلغ (مثلاً <code>{amount}</code>) را روی همین پیام ریپلای کنید."
+        f"✅ برای تایید، ریپلای کنید: <code>{amount}</code>"
     )
 
     try:
@@ -588,8 +716,9 @@ def handle_wallet_receipt(message, uid):
         print(f"[ERROR wallet receipt] {e}")
         bot.send_message(uid, "⚠️ خطا در ثبت. دوباره رسید را ارسال کنید.")
 
+
 # ══════════════════════════════════════════════
-# حساب کاربری و دکمه‌های بازگشت
+# حساب کاربری
 # ══════════════════════════════════════════════
 def show_account(chat_id, uid):
     user = db.get_user(uid)
@@ -610,6 +739,7 @@ def show_account(chat_id, uid):
         "📋 <b>کانفیگ‌های خریداری‌شده:</b>",
         {"inline_keyboard": rows}
     )
+
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("reconfig_"))
 def cb_reconfig(call):
@@ -633,6 +763,10 @@ def cb_reconfig(call):
         f"🔗 لینک سابسکریپشن:\n<code>{purchase['config_data']}</code>",
         parse_mode="HTML")
 
+
+# ══════════════════════════════════════════════
+# دکمه‌های بازگشت
+# ══════════════════════════════════════════════
 @bot.callback_query_handler(func=lambda c: c.data.startswith("back_"))
 def cb_back(call):
     uid = call.from_user.id
@@ -669,8 +803,9 @@ def cb_back(call):
 
     bot.answer_callback_query(call.id)
 
+
 # ══════════════════════════════════════════════
-# بخش پردازش ریپلای‌های ادمین در گروه (کاملاً دستی)
+# ریپلای ادمین در گروه
 # ══════════════════════════════════════════════
 @bot.message_handler(
     func=lambda m: m.chat.id == GROUP_ID and m.reply_to_message is not None
@@ -678,7 +813,7 @@ def cb_back(call):
 def handle_group_reply(message):
     replied_id = message.reply_to_message.message_id
 
-    # ── تایید شارژ کیف پول ──
+    # ── شارژ کیف پول ──
     req = db.get_wallet_request_by_group_msg(replied_id)
     if req is not None:
         txt = message.text.strip() if message.text else ""
@@ -691,54 +826,54 @@ def handle_group_reply(message):
         db.confirm_wallet_request(req['id'])
         try:
             bot.send_message(req['uid'],
-                f"✅ <b>کیف پول شما شارژ شد!</b>\n\n"
-                f"💰 مبلغ شارژ: <b>{price_fmt(confirmed_amount)}</b>\n"
+                f"✅ <b>کیف پول شارژ شد!</b>\n\n"
+                f"💰 مبلغ: <b>{price_fmt(confirmed_amount)}</b>\n"
                 f"👛 موجودی جدید: <b>{price_fmt(db.get_user(req['uid'])['wallet'])}</b>",
                 parse_mode="HTML", reply_markup=main_menu())
             bot.reply_to(message, f"✅ کیف پول کاربر <code>{req['uid']}</code> به مبلغ {price_fmt(confirmed_amount)} شارژ شد.", parse_mode="HTML")
         except Exception as e:
-            bot.reply_to(message, f"❌ خطا در ارسال پیام به کاربر: <code>{e}</code>", parse_mode="HTML")
+            bot.reply_to(message, f"❌ خطا: <code>{e}</code>", parse_mode="HTML")
         return
 
-    # ── ارسال دستی لینک کانفیگ (خرید با کارت یا کیف پول) ──
-    purchase_id = group_msg_to_purchase.get(replied_id)
-    if purchase_id is None:
-        purchase = db.get_purchase_by_group_msg(replied_id)
-        if purchase:
-            purchase_id = purchase['id']
-
-    if purchase_id is not None:
-        purchase = db.get_purchase_by_id(purchase_id)
-        if not purchase:
-            bot.reply_to(message, "❌ سفارش یافت نشد!")
-            return
-
+    # ── تایید خرید و ساخت اتوماتیک کانفیگ ──
+    purchase = db.get_purchase_by_group_msg(replied_id)
+    if purchase is not None:
         if purchase.get('config_data'):
-            bot.reply_to(message, "⚠️ این سفارش قبلاً پردازش و ارسال شده است.")
+            bot.reply_to(message, "⚠️ این سفارش قبلاً پردازش شده.")
             return
 
-        # دریافت لینک کانفیگ مستقیم از ریپلای متن ادمین
-        config_link = message.text.strip() if message.text else ""
-        if not config_link:
-            bot.reply_to(message, "❌ لطفاً لینک کانفیگ (V2Ray) را ریپلای کنید.")
+        txt = message.text.strip().lower() if message.text else ""
+        if txt != "ok":
+            bot.reply_to(message, "برای تایید بنویسید: <code>ok</code>", parse_mode="HTML")
             return
+
+        bot.reply_to(message, "⏳ در حال ساخت کانفیگ اتوماتیک در پاسارگاد...")
 
         uid = purchase['uid']
-        plan_name = purchase['plan_name']
-        config_name = purchase['config_name']
-        final_price = purchase['price']
-        wallet_paid = purchase.get('wallet_paid', False)
+        plan_key = purchase['plan_key']
+        plan = PLANS.get(plan_key)
+        if not plan:
+            bot.reply_to(message, "❌ پلن یافت نشد!")
+            return
 
-        try:
-            _send_config_to_user(uid, purchase_id, config_link, plan_name, config_name, final_price, wallet_paid)
-            check_referral_reward(uid, plan_name, config_name)
-            bot.reply_to(message, f"✅ کانفیگ با موفقیت به کاربر <code>{uid}</code> ارسال شد.", parse_mode="HTML")
-        except Exception as e:
-            bot.reply_to(message, f"❌ خطا در ارسال به کاربر: <code>{e}</code>", parse_mode="HTML")
+        st = {
+            'plan_key': plan_key,
+            'config_name': purchase['config_name'],
+            'discount': purchase['discount'],
+            'final_price': purchase['price'],
+        }
+
+        user_info = db.get_user(uid)
+        first_name = user_info['first_name'] if user_info else "کاربر"
+        username = user_info['username'] if user_info else None
+
+        _create_and_send_config(uid, first_name, username, st, plan, purchase['price'], wallet_paid=False)
+        bot.reply_to(message, "✅ کانفیگ اتوماتیک ساخته و ارسال شد!")
         return
 
+
 # ══════════════════════════════════════════════
-# دستورات همگانی ادمین
+# پیام همگانی (فقط ادمین)
 # ══════════════════════════════════════════════
 broadcast_state = {}
 
@@ -772,8 +907,10 @@ def handle_broadcast_message(message):
         return
 
     broadcast_state.pop(ADMIN_ID, None)
+
     all_users = db.get_all_users()
-    success, fail = 0, 0
+    success = 0
+    fail = 0
 
     bot.send_message(ADMIN_ID, f"⏳ در حال ارسال به {len(all_users)} کاربر...")
 
@@ -797,10 +934,12 @@ def handle_broadcast_message(message):
         f"❌ ناموفق: <b>{fail}</b>",
         parse_mode="HTML", reply_markup=main_menu())
 
+
 # ─── اجرا ───
 if __name__ == "__main__":
     db.init_db()
+    pg_login()  # لاگین اولیه به پاسارگاد
     web_thread = Thread(target=run_web, daemon=True)
     web_thread.start()
-    print("🤖 Bot started (manual polling system ready)...")
+    print("🤖 Bot started (polling)...")
     bot.infinity_polling()
