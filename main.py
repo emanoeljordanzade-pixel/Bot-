@@ -679,7 +679,7 @@ def handle_group_reply(message):
         except Exception as e:
             bot.reply_to(message, f"❌ خطا: <code>{e}</code>", parse_mode="HTML")
 
-# ══════════════════════════════════════════════
+# ═════════════════════════════════════════════
 # اجرا
 # ══════════════════════════════════════════════
 if __name__ == "__main__":
