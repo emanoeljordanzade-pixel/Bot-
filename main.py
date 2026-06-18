@@ -684,7 +684,7 @@ def handle_group_reply(message):
 # ══════════════════════════════════════════════
 if __name__ == "__main__":
     db.init_db()
-    web_thread = Thread(target=run_web, daemon=True)
-    web_thread.start()
     print("🤖 Bot started...")
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    bot_thread = Thread(target=lambda: bot.infinity_polling(timeout=60, long_polling_timeout=60), daemon=True)
+    bot_thread.start()
+    app.run(host='0.0.0.0', port=7860)
