@@ -26,10 +26,10 @@ app = Flask(__name__)
 user_states = {}
 
 PLANS = {
-    "plan_10gb": {"name": "۱۰ گیگابایت", "price": 150000},
-    "plan_20gb": {"name": "۲۰ گیگابایت", "price": 300000},
-    "plan_30gb": {"name": "۳۰ گیگابایت", "price": 400000},
-    "plan_40gb": {"name": "۴۰ گیگابایت", "price": 520000},
+    "plan_10gb": {"name": "۱۰ گیگابایت", "price": 130000},
+    "plan_20gb": {"name": "۲۰ گیگابایت", "price": 270000},
+    "plan_30gb": {"name": "۳۰ گیگابایت", "price": 3700000},
+    "plan_40gb": {"name": "۴۰ گیگابایت", "price": 490000},
 }
 
 def price_fmt(p):
