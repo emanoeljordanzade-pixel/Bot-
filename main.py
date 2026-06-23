@@ -9,7 +9,7 @@ import re
 import database as db
 
 # =================== تنظیمات ===================
-BOT_TOKEN = "8773215261:AAF67pQ9AHZrzvMOZlNbsnaG2-uoTo3HHyk"
+BOT_TOKEN = "8773215261:AAEo_Zu5QyvCJAW2qjQiP359Q83kZzIzxDc"
 ADMIN_ID = 7374971382
 ADMIN_USERNAME = "AIireza_1383"
 GROUP_ID = -1004294169429
