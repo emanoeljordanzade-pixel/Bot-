@@ -8,13 +8,15 @@ import string
 import re
 import database as db
 
+import os
+
 # =================== تنظیمات ===================
-BOT_TOKEN = "8773215261:AAEo_Zu5QyvCJAW2qjQiP359Q83kZzIzxDc"
-ADMIN_ID = 7374971382
-ADMIN_USERNAME = "AIireza_1383"
-GROUP_ID = -1004294169429
-CARD_NUMBER = "5892101542283284"
-CARD_OWNER = "علیرضا وحدانی اصل"
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "7374971382"))
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "AIireza_1383")
+GROUP_ID = int(os.environ.get("GROUP_ID", "-1004294169429"))
+CARD_NUMBER = os.environ.get("CARD_NUMBER", "5892101542283284")
+CARD_OWNER = os.environ.get("CARD_OWNER", "علیرضا وحدانی اصل")
 REFERRAL_INVITEE_DISCOUNT = 5
 REFERRAL_REFERRER_DISCOUNT = 7
 REFERRAL_REWARD_EVERY = 10
@@ -26,10 +28,10 @@ app = Flask(__name__)
 user_states = {}
 
 PLANS = {
-    "plan_10gb": {"name": "۱۰ گیگابایت", "price": 130000},
-    "plan_20gb": {"name": "۲۰ گیگابایت", "price": 270000},
-    "plan_30gb": {"name": "۳۰ گیگابایت", "price": 3700000},
-    "plan_40gb": {"name": "۴۰ گیگابایت", "price": 490000},
+    "plan_10gb": {"name": "۱۰ گیگابایت", "price": 150000},
+    "plan_20gb": {"name": "۲۰ گیگابایت", "price": 300000},
+    "plan_30gb": {"name": "۳۰ گیگابایت", "price": 400000},
+    "plan_40gb": {"name": "۴۰ گیگابایت", "price": 520000},
 }
 
 def price_fmt(p):
